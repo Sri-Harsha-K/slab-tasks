@@ -41,7 +41,8 @@ function lock(file) {
   for (;;) {
     try { fs.closeSync(fs.openSync(lockFile, 'wx')); return () => { try { fs.unlinkSync(lockFile); } catch (e) {} }; }
     catch (e) {
-      if (e.code !== 'EEXIST') throw e;
+      // Windows says EPERM/EACCES while another writer's lock is still being deleted: same as "taken".
+      if (!['EEXIST', 'EPERM', 'EACCES'].includes(e.code)) throw e;
       // A writer that crashed mid-change leaves its lock behind; take it over once it's clearly stale.
       try { if (Date.now() - fs.statSync(lockFile).mtimeMs > LOCK_STALE_MS) { fs.unlinkSync(lockFile); continue; } } catch (_) { continue; }
       if (Date.now() - start > LOCK_WAIT_MS) throw new Error('Slab Tasks: timed out waiting for ' + lockFile);

@@ -12,6 +12,10 @@ const FILE = defaultFile();
 const OWNER = (process.env.SLAB_TASKS_OWNER || '').trim();
 const ownerText = OWNER ? `the user (${OWNER})` : 'the user';
 const log = (...a) => console.error('[slab-tasks]', ...a);
+// Meetings that started before this (ISO time) were handled before automation took over: never backfill them.
+const SINCE = Date.parse(process.env.SLAB_TASKS_SINCE || '') || 0;
+const sinceText = SINCE ? new Date(SINCE).toISOString() : '';
+const tooOld = (m) => !!(SINCE && m && m.start && Date.parse(m.start) < SINCE);
 
 const localDate = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const brief = (t) => ({ id: t.id, title: t.title, notes: t.notes || undefined, due: t.due || undefined, time: t.time || undefined, done: t.done, createdBy: t.createdBy, meeting: t.source ? { id: t.source.meetingId, title: t.source.title, date: t.source.date || undefined } : undefined });
@@ -25,7 +29,8 @@ Creating tasks from meetings (e.g. Wispr Flow notes or transcripts):
 - Skip action items owned by other people, group decisions, FYIs, ideas nobody took, and anything already done in the meeting.
 - When unsure whether an item is theirs, leave it out and mention it in your summary instead.
 - Write each title as a short imperative ("Send Q3 numbers to Priya"). Put context (who asked, why, links) in notes. Set due (YYYY-MM-DD, resolved against the meeting date) only when a deadline was stated or clearly implied.
-- Always pass the meeting (id, title, date) to add_tasks: it prevents duplicates and marks the meeting as read.
+- Always pass the meeting (id, title, date, start) to add_tasks: it prevents duplicates and marks the meeting as read.${sinceText ? `
+- Meetings that started before ${sinceText} are already handled and are refused, unless the user explicitly asks for that meeting (then pass allow_old: true).` : ''}
 - Call check_meetings first and skip meetings already processed, unless the user asks to redo one. If a meeting had nothing for the user, call mark_meetings_processed so it is skipped next time.
 - Finish with a short summary: tasks added (per meeting), items skipped because they were someone else's, and anything uncertain.`;
 
@@ -42,13 +47,23 @@ const meetingIn = z.object({
   id: z.string().min(1).max(200).describe('Stable meeting id from the notes source (e.g. the Wispr Flow meeting id)'),
   title: z.string().max(200).optional().describe('Meeting title'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Meeting date YYYY-MM-DD (local)'),
+  start: z.iso.datetime({ offset: true }).optional().describe('When the meeting started, ISO time as the notes source gives it'),
 });
 
 server.registerTool('add_tasks', {
   title: 'Add tasks',
   description: `Add one or more tasks to ${ownerText}'s list. When the tasks come from a meeting, pass "meeting": duplicates from the same meeting are skipped and the meeting is marked as processed. Returns the tasks added and the ones skipped.`,
-  inputSchema: { tasks: z.array(taskIn).max(100).describe('Tasks to add (can be empty when used only to mark a meeting processed)'), meeting: meetingIn.optional() },
-}, async ({ tasks, meeting }) => {
+  inputSchema: {
+    tasks: z.array(taskIn).max(100).describe('Tasks to add (can be empty when used only to mark a meeting processed)'),
+    meeting: meetingIn.optional(),
+    allow_old: z.boolean().optional().describe('Only when the user explicitly asks for a meeting that started before the cutoff'),
+  },
+}, async ({ tasks, meeting, allow_old }) => {
+  if (tooOld(meeting) && !allow_old) {
+    log(`add_tasks: refused meeting ${meeting.id}, started ${meeting.start} before ${sinceText}`);
+    return reply({ added: [], skipped: tasks.map(t => ({ title: t.title, reason: 'before cutoff' })) },
+      `Meeting started before ${sinceText}, which was handled before automation took over. Nothing added.`);
+  }
   const source = meeting ? { meetingId: meeting.id, title: meeting.title || '', date: meeting.date || '' } : null;
   const { result } = mutate(doc => addTasks(doc, tasks, { source, createdBy: 'claude' }), FILE);
   const data = { added: result.added.map(brief), skipped: result.skipped };
@@ -102,15 +117,21 @@ server.registerTool('delete_task', {
 
 server.registerTool('check_meetings', {
   title: 'Check which meetings were processed',
-  description: 'Given meeting ids, report which ones have already been turned into tasks (so they can be skipped) and which are new.',
-  inputSchema: { meeting_ids: z.array(z.string().min(1).max(200)).max(200) },
+  description: 'Given meetings (id + start, preferred) or meeting ids, report which have already been turned into tasks, which started before the cutoff (skip both), and which are new.',
+  inputSchema: {
+    meetings: z.array(meetingIn).max(200).optional(),
+    meeting_ids: z.array(z.string().min(1).max(200)).max(200).optional(),
+  },
   annotations: { readOnlyHint: true },
-}, async ({ meeting_ids }) => {
+}, async ({ meetings = [], meeting_ids = [] }) => {
   const doc = read(FILE);
-  const processed = doc.processedMeetings.filter(m => meeting_ids.includes(m.id));
+  const all = [...meetings, ...meeting_ids.map(id => ({ id }))];
+  const ids = all.map(m => m.id);
+  const processed = doc.processedMeetings.filter(m => ids.includes(m.id));
   const done = new Set(processed.map(m => m.id));
-  const data = { processed, new: meeting_ids.filter(id => !done.has(id)) };
-  return reply(data, `${processed.length} already processed, ${data.new.length} new.`);
+  const old = all.filter(m => !done.has(m.id) && tooOld(m)).map(m => m.id);
+  const data = { processed, old, new: ids.filter(id => !done.has(id) && !old.includes(id)) };
+  return reply(data, `${processed.length} already processed, ${old.length} before the cutoff, ${data.new.length} new.`);
 });
 
 server.registerTool('mark_meetings_processed', {

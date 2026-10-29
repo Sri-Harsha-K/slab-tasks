@@ -35,6 +35,8 @@ claude mcp add --scope user slab-tasks --env "SLAB_TASKS_OWNER=Your Name" -- nod
 
 `SLAB_TASKS_OWNER` is your name as it appears in meetings. Claude uses it to tell your action items from everyone else's.
 
+`SLAB_TASKS_SINCE` (optional, ISO time such as `2026-10-29T21:00:00Z`) stops backfill. When Claude passes a meeting's start time, `check_meetings` lists meetings that started earlier as `old`, and `add_tasks` refuses them. The only exception is when you ask for one of those meetings by name (Claude then passes `allow_old: true`). Set it to the moment you turn on automation.
+
 ## Use it
 
 In Claude, say *"make tasks from today's meetings"*, or pick the **tasks_from_meetings** prompt. Claude then:

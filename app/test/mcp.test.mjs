@@ -13,7 +13,7 @@ const SERVER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'mc
 const FILE = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'slab-tasks-mcp-')), 'tasks.json');
 
 const client = new Client({ name: 'test', version: '0' });
-await client.connect(new StdioClientTransport({ command: process.execPath, args: [SERVER], env: { ...process.env, SLAB_TASKS_FILE: FILE, SLAB_TASKS_OWNER: 'Alex Rivera' }, stderr: 'ignore' }));
+await client.connect(new StdioClientTransport({ command: process.execPath, args: [SERVER], env: { ...process.env, SLAB_TASKS_FILE: FILE, SLAB_TASKS_OWNER: 'Alex Rivera', SLAB_TASKS_SINCE: '2026-10-29T21:00:00Z' }, stderr: 'ignore' }));
 const call = async (name, args) => (await client.callTool({ name, arguments: args }));
 const meeting = { id: 'wispr-42', title: 'Design sync', date: '2026-10-29' };
 
@@ -51,6 +51,24 @@ test('check_meetings / mark_meetings_processed', async () => {
   await call('mark_meetings_processed', { meetings: [{ id: 'wispr-43', title: 'All hands' }] });
   r = await call('check_meetings', { meeting_ids: ['wispr-42', 'wispr-43'] });
   assert.deepEqual(r.structuredContent.new, []);
+});
+
+test('meetings before SLAB_TASKS_SINCE are never backfilled, unless asked', async () => {
+  const old = { id: 'wispr-old', title: 'Last week', date: '2026-10-28', start: '2026-10-28T22:18:26.439000Z' };
+  const fresh = { id: 'wispr-new', title: 'Just now', start: '2026-10-29T14:30:00-07:00' };
+  let r = await call('check_meetings', { meetings: [old, fresh, { id: 'wispr-42' }] });
+  assert.deepEqual(r.structuredContent.old, ['wispr-old']);
+  assert.deepEqual(r.structuredContent.new, ['wispr-new']);
+  assert.deepEqual(r.structuredContent.processed.map(m => m.id), ['wispr-42']);
+  r = await call('add_tasks', { meeting: old, tasks: [{ title: 'Stale item' }] });
+  assert.equal(r.structuredContent.added.length, 0);
+  assert.equal(r.structuredContent.skipped[0].reason, 'before cutoff');
+  assert.ok(!read(FILE).tasks.some(t => t.title === 'Stale item'));
+  assert.ok(!read(FILE).processedMeetings.some(m => m.id === 'wispr-old'), 'a refused meeting is not marked processed');
+  r = await call('add_tasks', { meeting: old, tasks: [{ title: 'Stale item' }], allow_old: true });
+  assert.equal(r.structuredContent.added.length, 1);
+  await call('delete_task', { id: r.structuredContent.added[0].id });
+  assert.match(client.getInstructions(), /2026-10-29T21:00:00\.000Z/);
 });
 
 test('list, update, complete, delete', async () => {
