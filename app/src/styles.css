@@ -1,0 +1,45 @@
+:root {
+  --sans: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+html, body { margin: 0; background: #FFF4E0; }
+* { box-sizing: border-box; }
+a { color: #111; text-decoration: underline; }
+a:hover { background: #FFD23F; }
+button { color: inherit; }
+
+/* Hover / active / focus states from the design's style-hover, style-active and style-focus attributes.
+   Inline styles carry the resting state, so the state rules need !important to win. */
+.h-lift:hover { transform: translate(-2px, -2px) !important; box-shadow: 6px 6px 0 #111 !important; }
+.h-lift:active { transform: translate(4px, 4px) !important; box-shadow: 0 0 0 #111 !important; }
+.h-name:hover { transform: rotate(-2deg) translate(-2px, -2px) !important; box-shadow: 7px 7px 0 #111 !important; }
+.h-cell:hover { background: #FFF9D6 !important; }
+.h-footer:hover { background: #FFD23F !important; color: #111 !important; }
+.h-chip:hover { transform: translate(-1px, -1px) !important; box-shadow: 2px 2px 0 #111 !important; }
+.h-wev:hover { transform: translate(-2px, -2px) !important; box-shadow: 5px 5px 0 #111 !important; }
+.h-dev:hover { transform: translate(-2px, -2px) !important; box-shadow: 6px 6px 0 #111 !important; }
+.h-popx:hover { background: #FFD23F !important; color: #111 !important; border-color: #FFD23F !important; }
+.h-popitem:hover { transform: translate(-2px, -2px) !important; box-shadow: 3px 3px 0 #111 !important; }
+.h-modalx:hover { background: #111 !important; color: #fff !important; }
+.f-shadow:focus, .t-field:focus-within { box-shadow: 4px 4px 0 #111 !important; }
+.h-field:hover { box-shadow: 3px 3px 0 #111 !important; }
+.h-yellow:hover { background: #FFD23F !important; }
+.h-dpcell:hover { box-shadow: 2px 2px 0 #111 !important; }
+.h-noend:hover { background: #FF5C5C !important; }
+.h-dptoday:hover { background: #FFD23F !important; color: #111 !important; }
+.h-swatch:hover { transform: translateY(-3px) !important; }
+.h-underline:hover { text-decoration: underline; }
+.h-daypick:hover { transform: translate(-2px, -2px) !important; box-shadow: 3px 3px 0 #111 !important; }
+.h-clear:hover { background: #FF5C5C !important; transform: translate(-1px, -1px) !important; box-shadow: 4px 4px 0 #111 !important; }
+.h-clear:active { transform: translate(3px, 3px) !important; box-shadow: 0 0 0 #111 !important; }
+.h-menuitem:hover { background: #FFD23F !important; transform: translate(-2px, -2px); box-shadow: 3px 3px 0 #111; }
+.h-delete:hover { background: #FF3B30 !important; color: #fff !important; }
+.h-save:hover { transform: translate(-2px, -2px) !important; box-shadow: 6px 6px 0 #FFD23F !important; }
+.h-save:active { transform: translate(4px, 4px) !important; box-shadow: 0 0 0 #FFD23F !important; }
+
+/* Slab Tasks additions, same language as above. */
+.h-task:hover { transform: translate(-2px, -2px) !important; box-shadow: 6px 6px 0 #111 !important; }
+.h-task:focus-visible { box-shadow: 6px 6px 0 #FFD23F !important; }
+.h-check:hover { background: #FFF9D6 !important; }
+.h-check:hover > span { box-shadow: 2px 2px 0 #111; }
+@keyframes pop-in { from { transform: translate(-6px, -6px) scale(.98); } to { transform: none; } }
