@@ -4,7 +4,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { defaultFile, read, mutate } from '../shared/store.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { defaultFile, read, mutate, writeAtomic } from '../shared/store.js';
 import { addTasks, updateTask, deleteTask, markProcessed, viewTasks, counts, COLORS } from '../shared/tasks.js';
 
 const FILE = defaultFile();
@@ -16,6 +18,13 @@ const log = (...a) => console.error('[slab-tasks]', ...a);
 const SINCE = Date.parse(process.env.SLAB_TASKS_SINCE || '') || 0;
 const sinceText = SINCE ? new Date(SINCE).toISOString() : '';
 const tooOld = (m) => !!(SINCE && m && m.start && Date.parse(m.start) < SINCE);
+
+// Scheduled runs pick up where the last one left off. The checkpoint sits next to tasks.json; only this
+// server touches it. It is the last run's start, pulled back to the earliest meeting that was still being
+// written then, so a meeting whose notes finalize later is still inside the next run's window.
+const RUN_FILE = path.join(path.dirname(FILE), 'automation.json');
+const OVERLAP_MS = 60 * 60 * 1000; // re-scan an hour before the checkpoint; check_meetings drops repeats
+const readRun = () => { try { return JSON.parse(fs.readFileSync(RUN_FILE, 'utf8')) || {}; } catch (e) { return {}; } };
 
 const localDate = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const brief = (t) => ({ id: t.id, title: t.title, notes: t.notes || undefined, due: t.due || undefined, time: t.time || undefined, done: t.done, createdBy: t.createdBy, meeting: t.source ? { id: t.source.meetingId, title: t.source.title, date: t.source.date || undefined } : undefined });
@@ -141,6 +150,33 @@ server.registerTool('mark_meetings_processed', {
 }, async ({ meetings }) => {
   mutate(doc => markProcessed(doc, meetings.map(m => ({ meetingId: m.id, title: m.title, count: 0 }))), FILE);
   return reply({ marked: meetings.map(m => m.id) }, `Marked ${meetings.length} meeting(s) as processed.`);
+});
+
+server.registerTool('start_run', {
+  title: 'Start a scheduled run',
+  description: 'For scheduled runs: returns search_since (search meetings that started at or after it, i.e. since the previous run, with some overlap) and ran_at (pass it back to finish_run).',
+  inputSchema: {},
+  annotations: { readOnlyHint: true },
+}, async () => {
+  const now = Date.now(), prev = Date.parse(readRun().checkpoint || '') || 0;
+  const base = prev ? prev - OVERLAP_MS : SINCE || now - 24 * 3600e3;
+  const data = { search_since: new Date(Math.max(base, SINCE)).toISOString(), ran_at: new Date(now).toISOString(), previous_checkpoint: prev ? new Date(prev).toISOString() : null };
+  return reply(data, `Search meetings that started since ${data.search_since}.`);
+});
+
+server.registerTool('finish_run', {
+  title: 'Finish a scheduled run',
+  description: 'For scheduled runs, once every new meeting has been handled: saves the checkpoint so the next run starts here. Pass ran_at from start_run and the start times of meetings skipped because their notes were not finalized yet. Do not call it if the run failed.',
+  inputSchema: {
+    ran_at: z.iso.datetime({ offset: true }),
+    pending_starts: z.array(z.iso.datetime({ offset: true })).max(200).optional().describe('Start times of meetings left for later (finalized = false)'),
+  },
+}, async ({ ran_at, pending_starts = [] }) => {
+  const checkpoint = new Date(Math.min(Date.parse(ran_at), ...pending_starts.map(Date.parse))).toISOString();
+  fs.mkdirSync(path.dirname(RUN_FILE), { recursive: true });
+  writeAtomic(RUN_FILE, { checkpoint, finishedAt: new Date().toISOString() });
+  log('finish_run: checkpoint', checkpoint);
+  return reply({ checkpoint }, `Checkpoint saved: next run starts from ${checkpoint}.`);
 });
 
 server.registerPrompt('tasks_from_meetings', {

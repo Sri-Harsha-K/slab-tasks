@@ -37,6 +37,8 @@ claude mcp add --scope user slab-tasks --env "SLAB_TASKS_OWNER=Your Name" -- nod
 
 `SLAB_TASKS_SINCE` (optional, ISO time such as `2026-10-29T21:00:00Z`) stops backfill. When Claude passes a meeting's start time, `check_meetings` lists meetings that started earlier as `old`, and `add_tasks` refuses them. The only exception is when you ask for one of those meetings by name (Claude then passes `allow_old: true`). Set it to the moment you turn on automation.
 
+Scheduled runs call `start_run` first. It returns `search_since`, which is the previous run's checkpoint minus an hour of overlap; repeats are dropped by `check_meetings`. Each run ends with `finish_run`, which saves a new checkpoint to `automation.json` next to `tasks.json`. The checkpoint is pulled back to the start of any meeting whose notes weren't finalized yet, so that meeting is still inside the next window. A failed run doesn't save a checkpoint, so the next run retries the same window.
+
 ## Use it
 
 In Claude, say *"make tasks from today's meetings"*, or pick the **tasks_from_meetings** prompt. Claude then:

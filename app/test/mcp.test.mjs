@@ -21,7 +21,7 @@ test.after(() => client.close());
 
 test('lists the tools and the prompt; instructions name the owner', async () => {
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(t => t.name).sort(), ['add_tasks', 'check_meetings', 'delete_task', 'list_tasks', 'mark_meetings_processed', 'update_task']);
+  assert.deepEqual(tools.map(t => t.name).sort(), ['add_tasks', 'check_meetings', 'delete_task', 'finish_run', 'list_tasks', 'mark_meetings_processed', 'start_run', 'update_task']);
   const { prompts } = await client.listPrompts();
   assert.deepEqual(prompts.map(p => p.name), ['tasks_from_meetings']);
   assert.match(client.getInstructions(), /Alex Rivera/);
@@ -69,6 +69,23 @@ test('meetings before SLAB_TASKS_SINCE are never backfilled, unless asked', asyn
   assert.equal(r.structuredContent.added.length, 1);
   await call('delete_task', { id: r.structuredContent.added[0].id });
   assert.match(client.getInstructions(), /2026-10-29T21:00:00\.000Z/);
+});
+
+test('scheduled runs search from the previous run, held back for unfinished notes', async () => {
+  const win = async () => (await call('start_run', {})).structuredContent;
+  let w = await win();
+  assert.equal(w.previous_checkpoint, null);
+  assert.equal(w.search_since, '2026-10-29T21:00:00.000Z', 'first run starts at the cutoff');
+  // A meeting started 19:10 was still being written at the 19:45 run: the next run must still see it.
+  await call('finish_run', { ran_at: '2026-10-30T19:45:00Z', pending_starts: ['2026-10-30T19:10:00.000Z'] });
+  w = await win();
+  assert.equal(w.previous_checkpoint, '2026-10-30T19:10:00.000Z');
+  assert.equal(w.search_since, '2026-10-30T18:10:00.000Z');
+  await call('finish_run', { ran_at: '2026-10-30T20:45:00-00:00' });
+  assert.equal((await win()).search_since, '2026-10-30T19:45:00.000Z');
+  await call('finish_run', { ran_at: '2026-10-29T21:30:00Z' });
+  assert.equal((await win()).search_since, '2026-10-29T21:00:00.000Z', 'never earlier than the cutoff');
+  assert.ok(fs.existsSync(path.join(path.dirname(FILE), 'automation.json')));
 });
 
 test('list, update, complete, delete', async () => {

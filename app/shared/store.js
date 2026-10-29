@@ -26,7 +26,7 @@ export function read(file = defaultFile()) {
   catch (e) { return emptyDoc(); }
 }
 
-function writeAtomic(file, doc) {
+export function writeAtomic(file, doc) {
   const tmp = file + '.' + process.pid + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
   // Windows can refuse the rename for a moment while another process has the file open: retry briefly.
