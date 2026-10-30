@@ -203,7 +203,7 @@ function checkReminders() {
 
 const SNOOZE_MS = 10 * 60 * 1000;
 
-// ---- Cloud sync (optional): merge this PC's list with the self-hosted cloud connector (cloud/) ------
+// ---- Cloud sync (optional): merge this PC's list with a self-hosted cloud connector --------------
 // Every SYNC_MS, and a few seconds after a local change, the whole list is sent to <url>/sync; the cloud
 // merges it with its copy (newer edit wins, deletions stick) and returns the result, which is merged into
 // tasks.json. Tasks Claude added on the phone then pop up here like any other.

@@ -1,6 +1,6 @@
-// The Slab Tasks MCP tools, shared by the local stdio server (mcp/server.mjs, tasks.json on this PC) and the
-// cloud connector (cloud/, Cloudflare Workers). Each host passes a storage backend and its settings, so the
-// two behave the same.
+// The Slab Tasks MCP tools, used by the local stdio server (mcp/server.mjs, tasks.json on this PC) and by any
+// other host, such as a self-hosted cloud connector. Each host passes a storage backend and its settings, so
+// they all behave the same.
 //
 // backend: {
 //   read(): Promise<doc>                         current list

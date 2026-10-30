@@ -466,7 +466,7 @@ export default class Tasks extends React.Component {
         <div onClick={(e) => e.stopPropagation()} style={{ margin: 'auto', width: '100%', maxWidth: 520, background: '#FFF4E0', border: '3px solid #111', boxShadow: '10px 10px 0 #111', borderRadius: 14 }}>
           <div style={{ padding: '12px 16px', background: '#4FD1C5', borderBottom: '3px solid #111', borderRadius: '11px 11px 0 0', fontWeight: 800, fontSize: 22, textTransform: 'uppercase' }}>Cloud sync</div>
           <div style={{ padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.5 }}>Keeps this list in step with your own Slab Tasks cloud connector, so tasks Claude adds on claude.ai or your phone pop up here. Setup: cloud/README.md.</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.5 }}>Keeps this list in step with your own Slab Tasks cloud connector, so tasks Claude adds on claude.ai or your phone pop up here.</div>
             <label style={label}>CLOUD ADDRESS
               <input className="f-shadow" value={f.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://slab-tasks.<you>.workers.dev" autoFocus style={input} />
             </label>

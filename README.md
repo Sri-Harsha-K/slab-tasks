@@ -204,9 +204,9 @@ Layout: `shared/` holds the task model and file store, used by both the app and 
 
 Not yet linked to Slab. The task file format leaves room for Slab to show due tasks on its calendar later.
 
-## Cloud connector (optional, self-hosted)
+## Cloud sync (optional, advanced)
 
-Want Slab Tasks in Claude on the **web and mobile** too? [`cloud/`](cloud/README.md) runs the same tools as a remote connector on your own Cloudflare account, with GitHub sign-in limited to you. It's optional: the desktop app and extension don't need it. With **Cloud sync** (••• menu) the desktop app keeps its list in step with the cloud, so tasks from your phone pop up on your PC.
+The app can keep its list in step with a cloud copy (**••• → Cloud sync**), for people who run their own remote MCP connector so Claude on the web and mobile can reach their tasks. That connector isn't part of this repo. It should serve the same tools (`app/shared/tools.js`) and a `POST /sync` endpoint behind a bearer key, which merges the posted list into its own with `mergeDocs()` from `app/shared/tasks.js` and returns the result.
 
 ## License
 

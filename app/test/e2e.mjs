@@ -25,7 +25,7 @@ mutate(doc => {
   addTasks(doc, [{ title: 'Renew passport', due: yesterday }, { title: 'Water the plants', due: today, time: '18:00', color: '#7CE38B' }, { title: 'Plan offsite agenda', due: later }]);
 }, FILE);
 
-// A stand-in for the cloud connector's /sync endpoint (same merge as cloud/src/index.ts).
+// A stand-in for a cloud connector's /sync endpoint: merges the posted list with mergeDocs() and returns it.
 const SYNC_KEY = 'e2e-sync-key-0123456789abcdef';
 let cloudDoc = emptyDoc();
 const cloud = http.createServer((req, res) => {
