@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mutate, read } from '../shared/store.js';
-import { addTasks, mergeDocs, emptyDoc, sameDoc } from '../shared/tasks.js';
+import { addTasks, deleteTask, mergeDocs, emptyDoc, sameDoc } from '../shared/tasks.js';
 import http from 'node:http';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +129,10 @@ try {
   await p.locator('[data-task]', { hasText: 'Call the bank' }).click(); await wait(200);
   await p.locator('button', { hasText: /^Delete$/i }).click(); await wait(300);
   check('delete removes from file', !read(FILE).tasks.some(t => t.title === 'Call the bank'));
+  await wait(700);
+  const ownDeletePop = app.windows().find(w => w.url().includes('#notifier'));
+  const ownDeleteCards = ownDeletePop ? await ownDeletePop.locator('[role=status]', { hasText: 'DELETED' }).filter({ hasText: 'Call the bank' }).allInnerTexts() : [];
+  check('delete in the window raises no DELETED pop-up', ownDeleteCards.length === 0, ownDeleteCards.join(' | ').replace(/s+/g, ' '));
 
   // Reminder: a timed task that has just come due pops up in the corner window, once.
   const minuteAgo = new Date(Date.now() - 60e3);
@@ -175,6 +179,25 @@ try {
   let phonePop = false;
   for (let i = 0; i < 10 && !phonePop; i++) { const np = await notifierPage(); phonePop = !!np && await np.locator('text=Added on my phone').count() > 0; if (!phonePop) await wait(300); }
   check('sync: FROM CLAUDE pop-up for the phone task', phonePop);
+
+  // Deleted elsewhere pops up too: by Claude on this PC (the MCP server edits the file), or on the phone (comes down by sync).
+  const popText = async (text) => {
+    for (let i = 0; i < 25; i++) {
+      const np = await notifierPage();
+      const card = np && np.locator('[role=status]', { hasText: 'DELETED' }).filter({ hasText: text });
+      if (card && await card.count()) return (await card.first().innerText()).replace(/\s+/g, ' ');
+      await wait(300);
+    }
+    return '';
+  };
+  mutate(doc => deleteTask(doc, doc.tasks.find(t => t.title === 'Draft hiring plan').id), FILE);
+  const byClaude = await popText('Draft hiring plan');
+  check('delete by Claude on this PC: DELETED pop-up', byClaude.includes('DELETED') && byClaude.includes('Deleted by Claude'), byClaude);
+  cloudDoc = { ...cloudDoc, rev: cloudDoc.rev + 1, tasks: cloudDoc.tasks.filter(t => t.id !== 'phone-1'), deleted: [...cloudDoc.deleted, { id: 'phone-1', at: new Date().toISOString() }] };
+  const fromCloud = await popText('Added on my phone');
+  check('delete from the cloud: DELETED pop-up', fromCloud.includes('DELETED') && fromCloud.includes('synced from the cloud'), fromCloud);
+  check('delete from the cloud: gone from tasks.json', !read(FILE).tasks.some(t => t.id === 'phone-1'));
+  check('delete from the cloud: gone from the window', await p.locator('[data-task]', { hasText: 'Added on my phone' }).count() === 0);
   await p.locator('[data-pop-trigger="menu"]').click(); await wait(250);
   const syncLine = await p.locator('button.h-menuitem', { hasText: 'Cloud sync' }).innerText().catch(() => '');
   await p.locator('[data-pop-trigger="menu"]').click(); await wait(150);

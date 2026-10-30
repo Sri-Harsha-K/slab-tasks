@@ -27,7 +27,10 @@ let shownOnce = false;
 // file both sides lock and rewrite atomically: see shared/store.js. Loaded in whenReady (ES modules).
 let store = null, core = null, FILE = null;
 let lastRev = -1;
-const known = new Set();  // task ids already seen, so only new ones from Claude raise a pop-up
+// Tasks already seen (id → title): new ones from Claude raise a pop-up, and so do ones that disappear
+// when Claude or another device deletes them.
+const known = new Map();
+const remember = (doc) => { known.clear(); doc.tasks.forEach(t => known.set(t.id, t.title)); };
 
 // Small desktop-only state (separate from the task list).
 const stateFile = () => path.join(app.getPath('userData'), 'desktop.json');
@@ -154,7 +157,18 @@ function pushDoc(doc) {
   const firstRead = lastRev === -1;  // startup read had failed: these tasks aren't new, just late
   lastRev = doc.rev;
   const fresh = doc.tasks.filter(t => !known.has(t.id));
-  fresh.forEach(t => known.add(t.id));
+  const ids = new Set(doc.tasks.map(t => t.id));
+  const gone = [...known].filter(([id]) => !ids.has(id)).map(([, title]) => title);
+  remember(doc);
+  // Deletions made in this window never get here (change() remembers them first); these came from Claude
+  // on this PC (the MCP server writes the file) or from another device through cloud sync.
+  if (gone.length && lastRev > 0 && !firstRead) {
+    showToast({
+      id: 'deleted-' + doc.rev, kind: 'DELETED', color: '#FF5C5C', sound: true,
+      title: gone.length === 1 ? gone[0] : gone.length + ' tasks deleted',
+      body: (applyingSync ? 'Deleted elsewhere · synced from the cloud' : 'Deleted by Claude') + (gone.length > 1 ? ' · ' + gone.join(' · ') : ''),
+    });
+  }
   const fromClaude = fresh.filter(t => t.createdBy === 'claude');
   if (fromClaude.length && lastRev > 0 && !firstRead) {
     const meetings = [...new Set(fromClaude.map(t => t.source && t.source.title).filter(Boolean))];
@@ -262,7 +276,7 @@ let applyingSync = false;
 // Edits from this window are already on screen, so they raise no pop-up; edits arriving from the cloud do.
 const change = (fn, { fromSync = false } = {}) => {
   const { doc, result } = store.mutate(fn, FILE);
-  if (!fromSync) { known.clear(); doc.tasks.forEach(t => known.add(t.id)); }
+  if (!fromSync) remember(doc);
   applyingSync = fromSync;
   try { pushDoc(doc); } finally { applyingSync = false; }
   return { doc, result };
@@ -397,7 +411,7 @@ if (!app.requestSingleInstanceLock()) {
     FILE = process.env.SLAB_TASKS_FILE ? path.resolve(process.env.SLAB_TASKS_FILE) : path.join(app.getPath('userData'), store.FILE_NAME);
     // If the file can't be read yet (right after boot), lastRev stays -1 and the first good poll fills the window.
     const doc = readNow();
-    if (doc) { doc.tasks.forEach(t => known.add(t.id)); lastRev = doc.rev; }
+    if (doc) { remember(doc); lastRev = doc.rev; }
     watchFile();
     loadDesk();
     if (desk.sync && desk.sync.url) desk.sync = { url: desk.sync.url, key: openKey(desk.syncSealed) };
