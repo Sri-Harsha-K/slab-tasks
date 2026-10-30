@@ -52,14 +52,19 @@ In Claude, say *"make tasks from today's meetings"*, or pick the **tasks_from_me
 
 New tasks show up in the app right away, with a **FROM CLAUDE** pop-up even when the app is in the tray.
 
+You can also ask for one-off tasks, e.g. *"add a task for this on Friday at 3pm"*.
+
+**Automatic, every hour:** [`prompts/scheduler-prompt.txt`](prompts/scheduler-prompt.txt) is a fill-in prompt for a Claude scheduled task. It reads new notes from Wispr Flow and/or Granola since the previous run and adds your action items. The file explains the setup and the placeholders to fill in.
+
 | MCP tool | What it does |
 |---|---|
 | `add_tasks` | Add tasks, optionally from a meeting (dedupes, marks the meeting processed) |
 | `list_tasks` | `today` / `upcoming` / `all` / `done`, filter by meeting or text |
 | `update_task` | Edit title, notes, due, time, colour, done |
 | `delete_task` | Remove a task |
-| `check_meetings` | Which meeting ids were already processed |
+| `check_meetings` | Which meetings were already processed, or started before the cutoff |
 | `mark_meetings_processed` | Record meetings with nothing for you |
+| `start_run` / `finish_run` | Scheduled runs: which meetings to read, and where the next run starts |
 
 ## App
 
