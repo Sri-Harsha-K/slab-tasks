@@ -1,16 +1,16 @@
 # Slab Tasks
 
-A neobrutalist desktop to-do list for Windows, built on the same base as **Slab** (the calendar): same look, same Electron shell, same tray / start-with-Windows behaviour. It ships with an **MCP server**, so Claude can add tasks to it. Ask Claude to read your meeting notes in Wispr Flow and it adds only the action items that are yours.
+A neobrutalist desktop to-do list for Windows, built on the same base as **Slab** (the calendar): same look, same Electron shell, same tray / start-with-Windows behaviour. It ships with an **MCP server**, so Claude can add tasks to it. Ask Claude to read your meeting notes in Wispr Flow or Granola and it adds only the action items that are yours, by hand or every hour.
 
 ```
 Claude Desktop / Claude Code
-  ├─ Wispr Flow connector   → reads meetings, notes, transcripts
+  ├─ Wispr Flow / Granola   → reads meetings, notes, transcripts
   └─ slab-tasks MCP (stdio) → %APPDATA%\Slab Tasks\tasks.json ← Slab Tasks app (watches the file, updates live)
 ```
 
 ## Install
 
-1. Run `app\release\Slab-Tasks-Setup-1.0.0.exe`.
+1. Run `app\release\Slab-Tasks-Setup-<version>.exe` (build it with `npm run dist:win`).
 2. Connect Claude (below).
 
 ## Connect Claude
@@ -37,15 +37,13 @@ claude mcp add --scope user slab-tasks --env "SLAB_TASKS_OWNER=Your Name" -- nod
 
 `SLAB_TASKS_OWNER` is your name as it appears in meetings. Claude uses it to tell your action items from everyone else's.
 
-`SLAB_TASKS_SINCE` (optional, ISO time such as `2026-10-29T21:00:00Z`) stops backfill. When Claude passes a meeting's start time, `check_meetings` lists meetings that started earlier as `old`, and `add_tasks` refuses them. The only exception is when you ask for one of those meetings by name (Claude then passes `allow_old: true`). Set it to the moment you turn on automation.
-
-Scheduled runs call `start_run` first. It returns `search_since`, which is the previous run's checkpoint minus an hour of overlap; repeats are dropped by `check_meetings`. Each run ends with `finish_run`, which saves a new checkpoint to `automation.json` next to `tasks.json`. The checkpoint is pulled back to the start of any meeting whose notes weren't finalized yet, so that meeting is still inside the next window. A failed run doesn't save a checkpoint, so the next run retries the same window.
+`SLAB_TASKS_SINCE` (optional, ISO time such as `2026-10-29T21:00:00Z`) stops backfill. When Claude passes a meeting's start time, `check_meetings` lists meetings that started earlier as `old`, and `add_tasks` refuses them. The only exception is when you ask for one of those meetings by name (Claude then passes `allow_old: true`). Set it to the moment you turn on automation. In the extension, this is the **Ignore meetings before** setting.
 
 ## Use it
 
 In Claude, say *"make tasks from today's meetings"*, or pick the **tasks_from_meetings** prompt. Claude then:
 
-1. finds the meetings in Wispr Flow,
+1. finds the meetings in Wispr Flow or Granola,
 2. skips meetings it has already processed (`check_meetings`),
 3. adds only your action items, tagged with the meeting (`add_tasks`; re-running a meeting adds no duplicates),
 4. summarises what it added and what it skipped as someone else's.
@@ -54,7 +52,7 @@ New tasks show up in the app right away, with a **FROM CLAUDE** pop-up even when
 
 You can also ask for one-off tasks, e.g. *"add a task for this on Friday at 3pm"*.
 
-**Automatic, every hour:** [`prompts/scheduler-prompt.txt`](prompts/scheduler-prompt.txt) is a fill-in prompt for a Claude scheduled task. It reads new notes from Wispr Flow and/or Granola since the previous run and adds your action items. The file explains the setup and the placeholders to fill in.
+To have this happen on its own every hour, see [Automate it](#automate-it-hourly-scheduled-task).
 
 | MCP tool | What it does |
 |---|---|
@@ -65,6 +63,67 @@ You can also ask for one-off tasks, e.g. *"add a task for this on Friday at 3pm"
 | `check_meetings` | Which meetings were already processed, or started before the cutoff |
 | `mark_meetings_processed` | Record meetings with nothing for you |
 | `start_run` / `finish_run` | Scheduled runs: which meetings to read, and where the next run starts |
+
+## Automate it: hourly scheduled task
+
+A Claude scheduled task can read your new meeting notes every hour and add your action items, with no prompting. It reads Wispr Flow, Granola or both, and only looks at meetings since the previous run.
+
+### What you need
+
+- **Claude Desktop** with the **Slab Tasks extension** installed (see [Connect Claude](#connect-claude)). In **Settings → Extensions → Slab Tasks**, fill in:
+  - **Your name**: as it appears in meetings.
+  - **Ignore meetings before**: the time you switch automation on, as an ISO time such as `2026-10-29T21:00:00Z`. Older meetings then never get turned into tasks, so the first run doesn't backfill your whole history.
+- At least one **note-taker connector** in Claude: **Wispr Flow** and/or **Granola**. With only one, the prompt skips the other.
+- The **Slab Tasks app** installed and running (it starts with Windows), so new tasks pop up as they arrive.
+
+### 1. Fill in the prompt
+
+Copy [`prompts/scheduler-prompt.txt`](prompts/scheduler-prompt.txt) and replace the placeholders:
+
+| Placeholder | What to put | Example |
+|---|---|---|
+| `{{FULL_NAME}}` | Your name as it appears in calendar invites and notes | `Alex Rivera` |
+| `{{CALLED}}` | What people call you in meetings (add nicknames, comma-separated) | `Alex` |
+| `{{TIME_ZONE}}` | Your time zone | `Pacific time`, `IST` |
+| `{{NOT_ME}}` *(optional)* | Someone easily confused with you | `Alexa (design lead)` |
+| `{{OTHER_PEOPLE}}` *(optional)* | Colleagues who often take action items | `Sam, Priya, Jordan` |
+
+If you skip an optional placeholder, delete the sentence it's in. For `{{OTHER_PEOPLE}}`, that's the `(e.g. …)` part.
+
+### 2. Create the scheduled task
+
+In Claude Desktop, open **Scheduled tasks** and create a new one:
+
+- **Prompt**: your filled-in prompt.
+- **Schedule**: hourly on working days, at a time that leaves room for notes to finish after meetings end (Wispr Flow takes about 30 minutes). Example: every hour at :45 from 11:45 to 17:45, Monday to Friday (cron `45 11-17 * * 1-5`, in local time).
+- **Permissions**: let it use the note-taker and Slab Tasks tools without asking. It runs unattended, so a permission prompt would stall it.
+- **Notifications**: optional. The app already pops up **FROM CLAUDE** when tasks are added.
+
+### 3. Test it
+
+Run the task once by hand (**Run now**). Its summary lists:
+
+- the time window it searched,
+- the tasks it added, per meeting,
+- the items it skipped as someone else's,
+- meetings it left for later because their notes weren't finished.
+
+Check the tasks in the app. If it picked up someone else's items, add them to `{{NOT_ME}}` / `{{OTHER_PEOPLE}}` or sharpen the "Who I am" line.
+
+### How it works
+
+- **No duplicates.** Each meeting is processed once. Re-runs skip it (`check_meetings`), and a task you delete never comes back.
+- **Only new meetings.** Every run starts with `start_run`, which returns the previous run's checkpoint minus an hour of overlap. Every run ends with `finish_run`, which saves the next checkpoint to `%APPDATA%\Slab Tasks\automation.json`.
+- **Unfinished notes wait.** A meeting whose notes aren't finished yet (Wispr `finalized = false`, Granola transcript pending) holds the checkpoint at its start time. The next run picks it up.
+- **Failures retry.** A run that fails doesn't save a checkpoint, so the next run retries the same window. A missed run (PC asleep) is covered by the next one.
+- **One copy per meeting.** A meeting recorded by both Wispr Flow and Granola is used once: the Wispr copy is preferred, and the other copy is marked processed. Granola ids are stored with a `granola:` prefix.
+
+### Good to know
+
+- It only runs while your PC is on and Claude Desktop is running.
+- Each run uses your Claude plan's usage. A run with no new meetings is short.
+- To pause it, turn the task off in **Scheduled tasks**. To re-read a meeting on purpose, ask Claude in chat by meeting name. Claude can then override the cutoff (`allow_old`).
+- Claude Code works too: `claude mcp add` (above) gives it the same tools. Set `SLAB_TASKS_SINCE` there to match.
 
 ## App
 

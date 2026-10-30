@@ -1,30 +1,3 @@
-HOW TO USE THIS PROMPT
-======================
-Claude runs this prompt every hour and turns your new meeting notes into to-dos in Slab Tasks. It adds only the action items that are yours.
-
-You need:
-- Claude Desktop with the Slab Tasks connector installed (Settings > Extensions, or app/release/Slab-Tasks-<version>.mcpb).
-  In its settings, fill in "Your name". Also set "Ignore meetings before" to the time you switch automation on, so older meetings are never backfilled.
-- At least one note-taker connector in Claude: Wispr Flow and/or Granola. If you have only one, the prompt skips the other.
-
-Set it up:
-1. Copy everything below the "PROMPT" line.
-2. Replace every {{...}} placeholder. If you skip an optional one, delete the sentence or the "(e.g. …)" it sits in.
-3. In Claude Desktop, create a scheduled task:
-   - Prompt: the text you just edited.
-   - Schedule: for example hourly on weekdays at 45 minutes past the hour, 11:45 to 17:45 (cron: 45 11-17 * * 1-5).
-   - Permissions: let it use the note-taker and Slab Tasks tools without asking, because it runs unattended.
-4. Run it once by hand and check the summary and the tasks it added.
-
-Placeholders:
-  {{FULL_NAME}}       your name as it appears in calendar invites and notes, e.g. "Alex Rivera"
-  {{CALLED}}          what people call you in meetings, e.g. "Alex" (add nicknames separated by commas)
-  {{TIME_ZONE}}       your time zone, e.g. "Pacific time" or "IST"
-  {{NOT_ME}}          optional: people easily confused with you, e.g. "Alexa (design lead)"
-  {{OTHER_PEOPLE}}    optional: names of colleagues who often take action items, e.g. "Sam, Priya, Jordan"
-
-======================================== PROMPT ========================================
-
 Turn my new meeting notes (since the previous run) into to-dos in Slab Tasks. Notes can come from two note takers: Wispr Flow and Granola. This runs unattended every hour, so do not ask me anything: decide, and report in the final summary.
 
 Who I am: {{FULL_NAME}}, called "{{CALLED}}" in meetings. IMPORTANT: {{NOT_ME}} is a DIFFERENT person, not me. Speaker labels are often generic ("Speaker 2", "Microphone"/"System audio"); work out which speaker is me from context (e.g. someone says "{{CALLED}}, any updates?" and the next speaker answers).
