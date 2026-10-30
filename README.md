@@ -23,16 +23,54 @@ Claude Desktop / Claude Code
 
 </details>
 
+## Requirements
+
+- **Windows 10 or 11.** The app is Windows only for now.
+- **[Claude Desktop](https://claude.ai/download)**, signed in. Slab Tasks connects to Claude as a Desktop extension.
+- **A meeting note taker connected to Claude** *(for tasks from meetings)*. Any note taker that has a Claude connector works: Claude reads your notes through it and adds your action items. The [hourly automation](#automate-it-hourly-scheduled-task) prompt is ready-made for **Wispr Flow** and **Granola**; for others, ask Claude in chat or adapt the prompt's tool names. Connect it in Claude Desktop under **Settings → Connectors**.
+
+You don't need Node.js or any developer tools. Without a note taker you can still add tasks by chatting with Claude.
+
 ## Install
 
-1. Run `app\release\Slab-Tasks-Setup-<version>.exe` (build it with `npm run dist:win`).
-2. Connect Claude (below).
+1. **Download** from the [latest release](https://github.com/Sri-Harsha-K/slab-tasks/releases/latest):
+   - `Slab-Tasks-Setup-<version>.exe`: the app
+   - `Slab-Tasks-<version>.mcpb`: the Claude Desktop extension
+2. **Run the installer.** It installs for your Windows user, with no admin rights needed. The app opens and adds itself to the Start menu and to start-with-Windows, so it can show pop-ups from the tray.
+   - The installer isn't code-signed yet, so Windows may show **"Windows protected your PC"**. Click **More info → Run anyway**.
+3. **Keep it running.** Closing the window hides Slab Tasks to the tray (bottom-right, near the clock). To quit, right-click the tray icon → **Quit**.
 
-## Connect Claude
+## Connect Claude Desktop
 
-The MCP server is installed with the app at `<install dir>\resources\mcp\server.mjs` and runs on Node.js (v20+). In the app, **••• → Copy Claude config** copies the right entry for you.
+1. **Install the extension:** double-click `Slab-Tasks-<version>.mcpb`. Claude Desktop opens an install screen. You can also drag the file into **Settings → Extensions**.
+2. **Fill in the settings:**
+   - **Your name**: as it appears in meetings, e.g. `Alex Rivera`. Claude uses it to add only *your* action items.
+   - **Ignore meetings before** *(optional)*: an ISO time such as `2026-10-30T09:00:00Z`. Meetings that started earlier are never turned into tasks automatically. Set it to the moment you start using automation, so your first run doesn't backfill old meetings.
+3. Press **Install**, then **restart Claude Desktop**.
+4. **Check it:** in a new chat, open the connectors list (the **+** / tools menu). **Slab Tasks** should be listed and switched on, next to your note taker.
 
-**Claude Desktop (recommended): install the extension.** Run `npm run dist:mcpb` in `app/`, then double-click `app/release/Slab-Tasks-<version>.mcpb`, or drag it into Claude Desktop under **Settings → Extensions**. Fill in your name and press Install. Slab Tasks then appears in Claude's connectors list, and Desktop runs it with its own Node. Afterwards you can ask things like "add a task for this on Friday at 3pm".
+### Try it
+
+In a Claude Desktop chat:
+
+- *"Add a task to send the deck to Priya on Friday at 3pm."* The task appears in the app with a **FROM CLAUDE** pop-up, and you get a **DUE NOW** reminder at 3pm.
+- *"Make tasks from today's meetings."* Claude reads your note taker, adds only your action items, and tells you what it skipped as someone else's.
+- *"What's due today?"* · *"Move the deck task to Monday."* · *"Mark it done."*
+
+### Troubleshooting
+
+- **Slab Tasks isn't in the connectors list:** restart Claude Desktop, then check **Settings → Extensions** that it's installed and enabled.
+- **Claude adds other people's action items:** fix **Your name** in the extension settings, using the name people say in meetings. For the hourly automation, also fill in the prompt's `{{NOT_ME}}` / `{{OTHER_PEOPLE}}`.
+- **Tasks don't show in the app:** make sure the app is running (tray icon). It reads the same file Claude writes: `%APPDATA%\Slab Tasks\tasks.json`.
+- **Updating:** install the new `.exe` over the old one and double-click the new `.mcpb`. Your tasks are kept.
+
+<details><summary>Advanced: Claude Code, manual config, and settings</summary>
+
+**Claude Code**:
+
+```bash
+claude mcp add --scope user slab-tasks --env "SLAB_TASKS_OWNER=Your Name" -- node "C:\Users\<you>\AppData\Local\Programs\Slab Tasks\resources\mcp\server.mjs"
+```
 
 **Claude Desktop (manual)**: add this to `%APPDATA%\Claude\claude_desktop_config.json` under `mcpServers`, then restart Claude Desktop. Desktop may rewrite this file, so the extension is the more reliable option.
 
@@ -44,15 +82,13 @@ The MCP server is installed with the app at `<install dir>\resources\mcp\server.
 }
 ```
 
-**Claude Code**:
-
-```bash
-claude mcp add --scope user slab-tasks --env "SLAB_TASKS_OWNER=Your Name" -- node "C:\Users\<you>\AppData\Local\Programs\Slab Tasks\resources\mcp\server.mjs"
-```
+The MCP server is installed with the app at `<install dir>\resources\mcp\server.mjs` and runs on Node.js (v20+) for these two options. In the app, **••• → Copy Claude config** copies the right entry for you.
 
 `SLAB_TASKS_OWNER` is your name as it appears in meetings. Claude uses it to tell your action items from everyone else's.
 
 `SLAB_TASKS_SINCE` (optional, ISO time such as `2026-10-29T21:00:00Z`) stops backfill. When Claude passes a meeting's start time, `check_meetings` lists meetings that started earlier as `old`, and `add_tasks` refuses them. The only exception is when you ask for one of those meetings by name (Claude then passes `allow_old: true`). Set it to the moment you turn on automation. In the extension, this is the **Ignore meetings before** setting.
+
+</details>
 
 ## Use it
 
@@ -85,7 +121,7 @@ A Claude scheduled task can read your new meeting notes every hour and add your 
 
 ### What you need
 
-- **Claude Desktop** with the **Slab Tasks extension** installed (see [Connect Claude](#connect-claude)). In **Settings → Extensions → Slab Tasks**, fill in:
+- **Claude Desktop** with the **Slab Tasks extension** installed (see [Connect Claude](#connect-claude-desktop)). In **Settings → Extensions → Slab Tasks**, fill in:
   - **Your name**: as it appears in meetings.
   - **Ignore meetings before**: the time you switch automation on, as an ISO time such as `2026-10-29T21:00:00Z`. Older meetings then never get turned into tasks, so the first run doesn't backfill your whole history.
 - At least one **note-taker connector** in Claude: **Wispr Flow** and/or **Granola**. With only one, the prompt skips the other.
