@@ -42,7 +42,8 @@ You don't need Node.js or any developer tools. Without a note taker you can stil
 
 ## Connect Claude Desktop
 
-1. **Install the extension:** double-click `Slab-Tasks-<version>.mcpb`. Claude Desktop opens an install screen. You can also drag the file into **Settings → Extensions**.
+1. **Install the extension:** open Claude Desktop → **Settings → Extensions** and drag `Slab-Tasks-<version>.mcpb` into that window (or use its **Install extension…** button and pick the file). Claude Desktop shows an install screen.
+   - Double-clicking the file also works when Windows knows to open `.mcpb` files with Claude. If it opens in Notepad or a browser and shows garbled text, that's just the wrong program: use Settings → Extensions instead.
 2. **Fill in the settings:**
    - **Your name**: as it appears in meetings, e.g. `Alex Rivera`. Claude uses it to add only *your* action items.
    - **Ignore meetings before** *(optional)*: an ISO time such as `2026-10-30T09:00:00Z`. Meetings that started earlier are never turned into tasks automatically. Set it to the moment you start using automation, so your first run doesn't backfill old meetings.
@@ -62,6 +63,7 @@ In a Claude Desktop chat:
 - **Slab Tasks isn't in the connectors list:** restart Claude Desktop, then check **Settings → Extensions** that it's installed and enabled.
 - **Claude adds other people's action items:** fix **Your name** in the extension settings, using the name people say in meetings. For the hourly automation, also fill in the prompt's `{{NOT_ME}}` / `{{OTHER_PEOPLE}}`.
 - **Tasks don't show in the app:** make sure the app is running (tray icon). It reads the same file Claude writes: `%APPDATA%\Slab Tasks\tasks.json`.
+- **The `.mcpb` shows garbled text:** Windows opened it in the wrong program (it's a zip archive). Drag it into Claude Desktop → **Settings → Extensions** instead. To fix double-click, right-click the file → **Open with → Choose another app → Claude**, and tick *Always*. If your browser displayed it instead of downloading, right-click the link → **Save link as…**.
 - **Updating:** install the new `.exe` over the old one and double-click the new `.mcpb`. Your tasks are kept.
 
 <details><summary>Advanced: Claude Code, manual config, and settings</summary>
