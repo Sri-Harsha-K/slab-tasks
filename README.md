@@ -150,3 +150,7 @@ npm run dist:win     # installer → app/release/
 Layout: `shared/` holds the task model and file store, used by both the app and the MCP server. `electron/` is the shell (window, tray, pop-up, IPC). `src/` is the React UI (pickers, toast and styles come from Slab). `mcp/` is the MCP server, bundled to `mcp-dist/` with esbuild.
 
 Not yet linked to Slab. The task file format leaves room for Slab to show due tasks on its calendar later.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

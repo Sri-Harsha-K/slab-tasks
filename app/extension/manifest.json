@@ -50,6 +50,6 @@
     }
   },
   "keywords": ["tasks", "todo", "meetings", "productivity"],
-  "license": "UNLICENSED",
+  "license": "MIT",
   "compatibility": { "platforms": ["win32"], "runtimes": { "node": ">=20.0.0" } }
 }
