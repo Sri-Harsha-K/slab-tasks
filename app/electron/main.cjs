@@ -135,13 +135,17 @@ function showToast(toast) {
 
 // ---- Task list: owner of the file on the app side; watches it for changes made by Claude -----------
 
+// A read that still fails after store.read's retries is skipped: the next poll tries again.
+const readNow = () => { try { return store.read(FILE); } catch (e) { console.error('[slab-tasks] read failed:', e.message); return null; } };
+
 function pushDoc(doc) {
-  if (doc.rev === lastRev) return;
+  if (!doc || doc.rev === lastRev) return;
+  const firstRead = lastRev === -1;  // startup read had failed: these tasks aren't new, just late
   lastRev = doc.rev;
   const fresh = doc.tasks.filter(t => !known.has(t.id));
   fresh.forEach(t => known.add(t.id));
   const fromClaude = fresh.filter(t => t.createdBy === 'claude');
-  if (fromClaude.length && lastRev > 0) {
+  if (fromClaude.length && lastRev > 0 && !firstRead) {
     const meetings = [...new Set(fromClaude.map(t => t.source && t.source.title).filter(Boolean))];
     showToast({
       id: 'claude-' + doc.rev, kind: 'FROM CLAUDE', color: '#4FD1C5', sound: true,
@@ -161,11 +165,11 @@ function watchFile() {
     fs.watch(path.dirname(FILE), (_ev, name) => {
       if (name && name !== path.basename(FILE)) return;
       clearTimeout(watchTimer);
-      watchTimer = setTimeout(() => pushDoc(store.read(FILE)), 80);
+      watchTimer = setTimeout(() => pushDoc(readNow()), 80);
     });
   } catch (e) {}
   // Belt and braces for file systems where fs.watch misses events.
-  setInterval(() => pushDoc(store.read(FILE)), 5000).unref();
+  setInterval(() => pushDoc(readNow()), 5000).unref();
 }
 
 const change = (fn) => { const { doc, result } = store.mutate(fn, FILE); known.clear(); doc.tasks.forEach(t => known.add(t.id)); pushDoc(doc); return { doc, result }; };
@@ -258,9 +262,9 @@ if (!app.requestSingleInstanceLock()) {
     store = await import(pathToFileURL(path.join(__dirname, '..', 'shared', 'store.js')).href);
     core = await import(pathToFileURL(path.join(__dirname, '..', 'shared', 'tasks.js')).href);
     FILE = process.env.SLAB_TASKS_FILE ? path.resolve(process.env.SLAB_TASKS_FILE) : path.join(app.getPath('userData'), store.FILE_NAME);
-    const doc = store.read(FILE);
-    doc.tasks.forEach(t => known.add(t.id));
-    lastRev = doc.rev;
+    // If the file can't be read yet (right after boot), lastRev stays -1 and the first good poll fills the window.
+    const doc = readNow();
+    if (doc) { doc.tasks.forEach(t => known.add(t.id)); lastRev = doc.rev; }
     watchFile();
     loadDesk();
     // The installed app starts with Windows by default so Claude's tasks pop up after a restart (switchable in the tray / ••• menu).

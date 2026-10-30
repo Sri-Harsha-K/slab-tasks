@@ -20,10 +20,28 @@ export function defaultFile() {
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-/** Reads the list. A missing or unreadable file is an empty list (never throws). */
+const RETRIES = 40, RETRY_MS = 25;
+
+/**
+ * Reads the list. A missing file is an empty list. A file that is briefly locked (antivirus or the search
+ * indexer right after boot, another writer mid-rename) is retried for about a second; if it still can't be
+ * read this throws, never pretending the list is empty. Bad JSON throws with code 'ECORRUPT'.
+ */
 export function read(file = defaultFile()) {
-  try { return normalizeDoc(JSON.parse(fs.readFileSync(file, 'utf8'))); }
-  catch (e) { return emptyDoc(); }
+  for (let i = 0; ; i++) {
+    let text;
+    try { text = fs.readFileSync(file, 'utf8'); }
+    catch (e) {
+      if (e.code === 'ENOENT') return emptyDoc();
+      if (i < RETRIES && ['EBUSY', 'EPERM', 'EACCES'].includes(e.code)) { sleep(RETRY_MS); continue; }
+      throw e;
+    }
+    try { return normalizeDoc(JSON.parse(text)); }
+    catch (e) {
+      if (i < RETRIES) { sleep(RETRY_MS); continue; }
+      throw Object.assign(new Error('Slab Tasks: ' + file + ' is not valid JSON'), { code: 'ECORRUPT' });
+    }
+  }
 }
 
 export function writeAtomic(file, doc) {
@@ -59,7 +77,14 @@ export function mutate(fn, file = defaultFile()) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const unlock = lock(file);
   try {
-    const doc = read(file);
+    let doc;
+    try { doc = read(file); }
+    catch (e) {
+      if (e.code !== 'ECORRUPT') throw e;
+      // Keep the damaged file for recovery and start a fresh list rather than refusing every change.
+      fs.renameSync(file, file + '.corrupt-' + Date.now());
+      doc = emptyDoc();
+    }
     const result = fn(doc);
     doc.rev += 1;
     writeAtomic(file, doc);

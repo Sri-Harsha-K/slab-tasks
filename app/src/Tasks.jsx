@@ -39,7 +39,15 @@ export default class Tasks extends React.Component {
   quickDpRef = React.createRef();
 
   componentDidMount() {
-    api.get().then(doc => this.setState({ doc, loaded: true }));
+    // Load now, again whenever the window is brought forward (it may have sat hidden in the tray since boot),
+    // and keep retrying if the file couldn't be read yet.
+    this.load = () => api.get().then(
+      (doc) => { if (doc) this.setState({ doc, loaded: true }); else this.retryLoad(); },
+      () => this.retryLoad(),
+    );
+    this.retryLoad = () => { clearTimeout(this.loadTimer); this.loadTimer = setTimeout(this.load, 1000); };
+    this.load();
+    window.addEventListener('focus', this.load);
     this.offChange = api.onChange((doc) => {
       const old = new Set(this.state.doc.tasks.map(t => t.id));
       const fresh = { ...this.state.fresh };
@@ -78,6 +86,7 @@ export default class Tasks extends React.Component {
   componentWillUnmount() {
     window.removeEventListener('keydown', this.onKey); document.removeEventListener('mousedown', this.onDown);
     window.removeEventListener('resize', this.onResize); clearInterval(this.timer); clearTimeout(this.freshTimer);
+    window.removeEventListener('focus', this.load); clearTimeout(this.loadTimer);
     if (this.offChange) this.offChange();
     if (this.offOpen) this.offOpen();
   }

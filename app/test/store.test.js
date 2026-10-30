@@ -9,11 +9,32 @@ import { addTasks } from '../shared/tasks.js';
 
 const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'slab-tasks-')), 'tasks.json');
 
-test('read: missing or corrupt file is an empty list', () => {
+test('read: a missing file is an empty list; a bad file throws instead of looking empty', () => {
   const f = tmpFile();
   assert.deepEqual(read(f).tasks, []);
   fs.writeFileSync(f, '{not json');
-  assert.deepEqual(read(f).tasks, []);
+  assert.throws(() => read(f), { code: 'ECORRUPT' });
+});
+
+test('read: a file that is briefly unreadable is retried, not treated as empty', async () => {
+  const f = tmpFile();
+  mutate(d => addTasks(d, [{ title: 'keep me' }]), f);
+  const good = fs.readFileSync(f, 'utf8');
+  fs.writeFileSync(f, good.slice(0, 20));  // as if caught half-written
+  const fixer = spawn(process.execPath, ['-e', `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(f)}, ${JSON.stringify(good)}), 300)`]);
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(read(f).tasks[0].title, 'keep me');
+  await new Promise(r => fixer.on('exit', r));
+});
+
+test('mutate: a corrupt file is kept aside, never silently overwritten', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, '{not json');
+  mutate(d => addTasks(d, [{ title: 'fresh' }]), f);
+  assert.equal(read(f).tasks[0].title, 'fresh');
+  const kept = fs.readdirSync(path.dirname(f)).filter(n => n.startsWith('tasks.json.corrupt-'));
+  assert.equal(kept.length, 1);
+  assert.equal(fs.readFileSync(path.join(path.dirname(f), kept[0]), 'utf8'), '{not json');
 });
 
 test('mutate: saves, bumps rev, leaves no temp or lock files', () => {
