@@ -1,7 +1,7 @@
 {
   "name": "slab-tasks",
   "productName": "Slab Tasks",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A neobrutalist desktop to-do list that Claude can write to",
   "author": "Slab",
   "main": "electron/main.cjs",

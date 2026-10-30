@@ -24,15 +24,16 @@ mutate(doc => {
   addTasks(doc, [{ title: 'Renew passport', due: yesterday }, { title: 'Water the plants', due: today, time: '18:00', color: '#7CE38B' }, { title: 'Plan offsite agenda', due: later }]);
 }, FILE);
 
+// Runs off-screen and muted (SLAB_TASKS_HEADLESS), so nothing appears on the desktop of the machine running it.
 // Runs the unpackaged app: the packaged build turns off the inspector fuse Playwright needs to attach.
-const app = await electron.launch({ args: [path.join(here, '..')], env: { ...process.env, SLAB_TASKS_FILE: FILE, SLAB_TASKS_USER_DATA: path.join(tmp, 'profile') } });
+const app = await electron.launch({ args: [path.join(here, '..')], env: { ...process.env, SLAB_TASKS_FILE: FILE, SLAB_TASKS_USER_DATA: path.join(tmp, 'profile'), SLAB_TASKS_HEADLESS: '1' } });
 try {
   const p = await app.firstWindow();
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
   await p.setViewportSize({ width: 1440, height: 900 }).catch(() => {});
   await p.waitForSelector('[data-task]');
   await wait(400);
-  await p.screenshot({ path: OUT + '/1-all.png' });
+  await p.screenshot({ path: OUT + '/1-all.png', timeout: 5000 }).catch(() => {});
 
   const titles = async () => p.$$eval('[data-task] span span:first-child', els => els.map(e => e.textContent));
   check('loads tasks from the file', (await p.locator('[data-task]').count()) === 3);
@@ -54,7 +55,18 @@ try {
   check('live update: Claude task appears without reload', await claudeCard.count() === 1);
   check('live update: tagged CLAUDE + meeting', (await claudeCard.innerText().catch(() => '')).includes('CLAUDE') && (await claudeCard.innerText().catch(() => '')).includes('FROM: Sprint review'));
   check('rail lists the meeting', await p.locator('aside button', { hasText: 'Sprint review' }).count() === 1);
-  await p.screenshot({ path: OUT + '/2-claude-live.png' });
+  await p.screenshot({ path: OUT + '/2-claude-live.png', timeout: 5000 }).catch(() => {});
+
+  // A long meeting title shortens with "…" and its date stays visible inside the chip.
+  mutate(doc => addTasks(doc, [{ title: 'Long meeting chip' }], { source: { meetingId: 'wispr-long', title: 'Sales Automation Cost Optimization and Quarterly Planning Review', date: today }, createdBy: 'claude' }), FILE);
+  await p.waitForSelector('[data-task]:has-text("Long meeting chip")', { timeout: 8000 }).catch(() => {});
+  const chipFits = await p.locator('[data-task]', { hasText: 'Long meeting chip' }).locator('.h-chip').evaluate(c => {
+    const d = c.lastElementChild.getBoundingClientRect(), box = c.getBoundingClientRect();
+    return c.lastElementChild.textContent.startsWith('·') && d.right <= box.right + 1 && d.width > 0;
+  }).catch(() => false);
+  check('meeting chip: long title shortened, date still visible', chipFits);
+  mutate(doc => { doc.tasks = doc.tasks.filter(t => t.title !== 'Long meeting chip'); doc.processedMeetings = doc.processedMeetings.filter(m => m.id !== 'wispr-long'); }, FILE);
+  await wait(400);
 
   // Meeting filter
   await p.locator('aside button', { hasText: 'Sprint review' }).click(); await wait(200);
@@ -66,7 +78,7 @@ try {
   await p.locator('button', { hasText: /^MEETING$/ }).click(); await wait(200);
   const labels = await p.$$eval('section > div:first-child span:first-child', els => els.map(e => e.textContent));
   check('group by meeting', labels.includes('Sprint review') && labels.includes('Added by hand'), labels.join(' | '));
-  await p.screenshot({ path: OUT + '/3-by-meeting.png' });
+  await p.screenshot({ path: OUT + '/3-by-meeting.png', timeout: 5000 }).catch(() => {});
   await p.locator('button', { hasText: /^DATE$/ }).click(); await wait(150);
 
   // Complete
@@ -75,7 +87,7 @@ try {
   check('done task leaves the open list', await p.locator('[data-task]', { hasText: 'Water the plants' }).count() === 0);
   await p.locator('header button', { hasText: /^Done/i }).click(); await wait(200);
   check('done view shows it', await p.locator('[data-task]', { hasText: 'Water the plants' }).count() === 1);
-  await p.screenshot({ path: OUT + '/4-done.png' });
+  await p.screenshot({ path: OUT + '/4-done.png', timeout: 5000 }).catch(() => {});
 
   // Today view
   await p.locator('header button', { hasText: /^Today/i }).click(); await wait(200);
@@ -86,7 +98,7 @@ try {
   await claudeCard.click(); await wait(250);
   check('edit modal opens', await p.locator('text=EDIT TASK').count() === 1 || await p.locator('text=Edit task').count() === 1);
   check('modal shows source', await p.locator('text=ADDED BY CLAUDE').count() === 1);
-  await p.screenshot({ path: OUT + '/5-edit.png' });
+  await p.screenshot({ path: OUT + '/5-edit.png', timeout: 5000 }).catch(() => {});
   const title = p.locator('input[placeholder="What needs doing?"]');
   await title.fill('Send Q3 numbers to Priya + Ana');
   await p.locator('button', { hasText: /^Save$/i }).click(); await wait(300);
@@ -118,9 +130,21 @@ try {
   const reminderText = reminder ? await reminder.innerText() : '';
   check('reminder: labelled DUE NOW with its time', reminderText.includes('DUE NOW') && reminderText.includes(hhmm), reminderText.replace(/\s+/g, ' '));
   if (pop) {
-    await pop.screenshot({ path: OUT + '/7-reminder.png' });
-    await reminder.locator('[aria-label=Dismiss]').click(); await wait(16000);  // one more reminder check
+    await pop.screenshot({ path: OUT + '/7-reminder.png', timeout: 5000 }).catch(() => {});
+    check('pop-up: Dismiss and Snooze buttons', await pop.locator('button', { hasText: 'DISMISS' }).count() >= 1 && await pop.locator('button', { hasText: 'SNOOZE' }).count() === 1);
+    await pop.locator('button', { hasText: 'SNOOZE' }).click(); await wait(500);
+    const deskState = JSON.parse(fs.readFileSync(path.join(tmp, 'profile', 'desktop.json'), 'utf8'));
+    check('snooze: pop-up closes and is saved for later', await pop.locator('text=Stand-up with Sam').count() === 0
+      && (deskState.snoozed || []).some(s => s.toast.title === 'Stand-up with Sam' && s.until > Date.now() + 9 * 60e3));
+    await wait(16000);  // one more reminder check
     check('reminder: fires only once', await pop.locator('text=Stand-up with Sam').count() === 0);
+    // A second reminder, left alone, fades out by itself.
+    mutate(doc => addTasks(doc, [{ title: 'Fade check', due: fmt(minuteAgo), time: hhmm }], { now: new Date(Date.now() - 3600e3).toISOString() }), FILE);
+    let seenFade = false;
+    for (let i = 0; i < 20 && !seenFade; i++) { await wait(1000); seenFade = await pop.locator('text=Fade check').count() > 0; }
+    await wait(6500);
+    const left = await pop.locator('text=Fade check').count();
+    check('pop-up: fades out on its own after 5 s', seenFade && left === 0, 'seen=' + seenFade + ' left=' + left);
   }
 
   // Narrow window: no horizontal overflow
@@ -130,7 +154,7 @@ try {
   await wait(400);
   const overflow = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check('narrow window: no horizontal scroll', overflow <= 0, 'overflow=' + overflow);
-  await p.screenshot({ path: OUT + '/6-narrow.png' });
+  await p.screenshot({ path: OUT + '/6-narrow.png', timeout: 5000 }).catch(() => {});
 
   check('no renderer errors', errs.length === 0, errs.join(' | '));
 } finally {

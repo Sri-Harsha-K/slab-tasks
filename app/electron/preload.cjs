@@ -29,4 +29,5 @@ contextBridge.exposeInMainWorld('slab', {
   resizeNotifier: (h) => ipcRenderer.send('notifier:resize', h),
   dismissToast: (id) => ipcRenderer.send('toast:dismiss', id),
   openToast: (id) => ipcRenderer.send('toast:open', id),
+  snoozeToast: (id) => ipcRenderer.send('toast:snooze', id),
 });

@@ -11,6 +11,10 @@ const isWin = process.platform === 'win32';
 
 // Tests run the app against a throwaway profile (SLAB_TASKS_FILE points the list elsewhere too).
 if (process.env.SLAB_TASKS_USER_DATA) app.setPath('userData', path.resolve(process.env.SLAB_TASKS_USER_DATA));
+// Test mode: windows open far off-screen, without focus, sound or a tray icon, so a test run never shows
+// up on the desktop of the machine it runs on.
+const HEADLESS = !!process.env.SLAB_TASKS_HEADLESS;
+const OFF_SCREEN = -32000;
 
 let win = null;
 let notifier = null;
@@ -44,9 +48,13 @@ function createWindow(hidden) {
     icon: path.join(__dirname, 'icon.png'),
     autoHideMenuBar: true,
     show: false,
+    ...(HEADLESS ? { x: OFF_SCREEN, y: OFF_SCREEN, skipTaskbar: true } : {}),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: PRELOAD, disableBlinkFeatures: 'Auxclick' },
   });
   win.once('ready-to-show', () => { if (!hidden) showWindow(); });
+  // Hand the window its list as soon as it loads instead of waiting for it to ask: right after an install the
+  // window's own request can come back empty, and the list is only pushed again when the file changes.
+  win.webContents.on('did-finish-load', () => { const doc = readNow(); if (doc && win) win.webContents.send('tasks:changed', doc); });
   win.loadFile(PAGE);
   win.on('close', (e) => {
     if (quitting) return;
@@ -63,6 +71,7 @@ function createWindow(hidden) {
 function showWindow() {
   if (!win) return createWindow(false);
   if (win.isMinimized()) win.restore();
+  if (HEADLESS) { win.setPosition(OFF_SCREEN, OFF_SCREEN); win.showInactive(); return; }
   if (!shownOnce) { shownOnce = true; win.maximize(); }
   win.show();
   win.focus();
@@ -116,7 +125,8 @@ function createNotifier() {
       backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required',  // it plays the chime on its own
     },
   });
-  notifier.setAlwaysOnTop(true, 'screen-saver');
+  if (HEADLESS) notifier.webContents.setAudioMuted(true);
+  else notifier.setAlwaysOnTop(true, 'screen-saver');
   notifier.loadFile(PAGE, { hash: 'notifier' });
   notifier.on('closed', () => { notifier = null; });
 }
@@ -177,12 +187,19 @@ function checkReminders() {
       id: 'due-' + core.reminderKey(t), kind: late ? 'MISSED' : 'DUE NOW', color: t.color, sound: true,
       title: t.title,
       body: (late ? 'Was due ' : 'Due ') + t.time + (t.source && t.source.title ? ' · ' + t.source.title : t.notes ? ' · ' + t.notes.split(/\r?\n/)[0].slice(0, 80) : ''),
-      open: { id: t.id },
+      open: { id: t.id }, snooze: true,
     });
   }
   desk.reminded = fired;
-  if (due.length) saveDesk();
+  // Snoozed reminders come back once their time is up (kept in desktop.json, so a restart doesn't lose them).
+  const snoozed = desk.snoozed || [];
+  const back = snoozed.filter(s => s.until <= now);
+  for (const s of back) showToast({ ...s.toast, id: s.toast.id + '-s' + s.until, kind: 'SNOOZED' });
+  desk.snoozed = snoozed.filter(s => s.until > now);
+  if (due.length || back.length) saveDesk();
 }
+
+const SNOOZE_MS = 10 * 60 * 1000;
 
 let watchTimer = null;
 function watchFile() {
@@ -236,13 +253,23 @@ ipcMain.on('notifier:resize', (e, h) => {
   if (!fromNotifier(e) || !toasts.length) return;
   const height = Math.max(40, Math.min(900, Math.round(+h || 0)));
   const wa = screen.getPrimaryDisplay().workArea;
-  notifier.setBounds({ x: wa.x + wa.width - NOTIFIER_W - 8, y: wa.y + wa.height - height - 8, width: NOTIFIER_W, height });
+  notifier.setBounds(HEADLESS ? { x: OFF_SCREEN, y: OFF_SCREEN, width: NOTIFIER_W, height }
+    : { x: wa.x + wa.width - NOTIFIER_W - 8, y: wa.y + wa.height - height - 8, width: NOTIFIER_W, height });
   if (!notifier.isVisible()) notifier.showInactive();
 });
 ipcMain.on('toast:dismiss', (e, id) => {
   if (!fromNotifier(e)) return;
   toasts = toasts.filter(t => t.id !== id);
   sendToasts();
+});
+ipcMain.on('toast:snooze', (e, id) => {
+  if (!fromNotifier(e)) return;
+  const t = toasts.find(x => x.id === id);
+  toasts = toasts.filter(x => x.id !== id);
+  sendToasts();
+  if (!t || !t.snooze) return;
+  desk.snoozed = [...(desk.snoozed || []), { until: Date.now() + SNOOZE_MS, toast: t }];
+  saveDesk();
 });
 // Clicking a pop-up brings the app forward (from the tray too) and opens that task.
 ipcMain.on('toast:open', (e, id) => {
@@ -299,7 +326,7 @@ if (!app.requestSingleInstanceLock()) {
       desk.autoStartInitialised = true; saveDesk();
       if (isWin && app.isPackaged) setAutoStart(true);
     }
-    createTray();
+    if (!HEADLESS) createTray();
     createWindow(process.argv.includes(HIDDEN_ARG));
     setTimeout(checkReminders, 3000);  // catch up on anything missed while the app was off
     setInterval(checkReminders, REMINDER_CHECK_MS).unref();

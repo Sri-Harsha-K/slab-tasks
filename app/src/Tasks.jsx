@@ -49,6 +49,8 @@ export default class Tasks extends React.Component {
     this.load();
     window.addEventListener('focus', this.load);
     this.offChange = api.onChange((doc) => {
+      // The first list to arrive is the starting state, not news: no NEW badges for it.
+      if (!this.state.loaded) return this.setState({ doc, loaded: true });
       const old = new Set(this.state.doc.tasks.map(t => t.id));
       const fresh = { ...this.state.fresh };
       for (const t of doc.tasks) if (!old.has(t.id) && t.createdBy === 'claude') fresh[t.id] = Date.now();
@@ -334,7 +336,11 @@ export default class Tasks extends React.Component {
               {t.createdBy === 'claude' && <span style={{ ...chip, background: '#111', color: '#4FD1C5', borderColor: '#111' }}>✦ CLAUDE</span>}
               {t.source && (
                 <span className="h-chip" title="Show tasks from this meeting" onClick={(e) => { e.stopPropagation(); this.setState({ meetingId: t.source.meetingId }); }}
-                  style={{ ...chip, background: '#FFF4E0', cursor: 'pointer' }}>FROM: {t.source.title || 'Meeting'}{t.source.date ? ' · ' + short(parse(t.source.date)).toUpperCase() : ''}</span>
+                  style={{ ...chip, background: '#FFF4E0', cursor: 'pointer', flex: '0 1 auto', minWidth: 0, maxWidth: 360 }}>
+                  {/* "…" only works on a plain block, not the flex chip: the title shrinks, the date always shows. */}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>FROM: {t.source.title || 'Meeting'}</span>
+                  {t.source.date && <span style={{ flex: 'none' }}>· {short(parse(t.source.date)).toUpperCase()}</span>}
+                </span>
               )}
             </span>
           )}
