@@ -17,7 +17,9 @@ Claude Desktop / Claude Code
 
 The MCP server is installed with the app at `<install dir>\resources\mcp\server.mjs` and runs on Node.js (v20+). In the app, **••• → Copy Claude config** copies the right entry for you.
 
-**Claude Desktop**: add this to `%APPDATA%\Claude\claude_desktop_config.json` under `mcpServers`, then restart Claude Desktop:
+**Claude Desktop (recommended): install the extension.** Run `npm run dist:mcpb` in `app/`, then double-click `app/release/Slab-Tasks-<version>.mcpb`, or drag it into Claude Desktop under **Settings → Extensions**. Fill in your name and press Install. Slab Tasks then appears in Claude's connectors list, and Desktop runs it with its own Node. Afterwards you can ask things like "add a task for this on Friday at 3pm".
+
+**Claude Desktop (manual)**: add this to `%APPDATA%\Claude\claude_desktop_config.json` under `mcpServers`, then restart Claude Desktop. Desktop may rewrite this file, so the extension is the more reliable option.
 
 ```json
 "slab-tasks": {

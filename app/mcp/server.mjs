@@ -33,6 +33,11 @@ const fail = (text) => ({ content: [{ type: 'text', text }], isError: true });
 
 const INSTRUCTIONS = `Slab Tasks is ${ownerText}'s personal to-do list (a desktop app). Tasks you add appear in the app immediately.
 
+One-off tasks from chat ("add a task for this on Friday at 3pm", "remind me tomorrow to…"):
+- Call add_tasks right away without a meeting. "This"/"that" means what the conversation is about: write a clear title and put the useful context (links, names, numbers) in notes.
+- Resolve relative dates against the user's local date (list_tasks returns "today" if you are unsure). Pass due as YYYY-MM-DD and time as 24h HH:MM. A time with no date means today.
+- Confirm back in one line with the resolved date and time (e.g. "Fri 31 Oct, 15:00").
+
 Creating tasks from meetings (e.g. Wispr Flow notes or transcripts):
 - Add ONLY action items that belong to ${ownerText}: things assigned to them, or that they volunteered for ("I'll…", "<their name> to…", "can you take this?" → "yes"). Match their name loosely (first name, nickname, "me"/"I" when they are the speaker).
 - Skip action items owned by other people, group decisions, FYIs, ideas nobody took, and anything already done in the meeting.
@@ -61,7 +66,7 @@ const meetingIn = z.object({
 
 server.registerTool('add_tasks', {
   title: 'Add tasks',
-  description: `Add one or more tasks to ${ownerText}'s list. When the tasks come from a meeting, pass "meeting": duplicates from the same meeting are skipped and the meeting is marked as processed. Returns the tasks added and the ones skipped.`,
+  description: `Add one or more tasks to ${ownerText}'s list, e.g. "add a task for this on Friday at 3pm". Give due (YYYY-MM-DD, resolved against the user's local date) and time (24h HH:MM) when the user names them; a time alone means today. When the tasks come from a meeting, pass "meeting": duplicates from the same meeting are skipped and the meeting is marked as processed. Returns the tasks added, the ones skipped, and today's date.`,
   inputSchema: {
     tasks: z.array(taskIn).max(100).describe('Tasks to add (can be empty when used only to mark a meeting processed)'),
     meeting: meetingIn.optional(),
@@ -74,8 +79,11 @@ server.registerTool('add_tasks', {
       `Meeting started before ${sinceText}, which was handled before automation took over. Nothing added.`);
   }
   const source = meeting ? { meetingId: meeting.id, title: meeting.title || '', date: meeting.date || '' } : null;
-  const { result } = mutate(doc => addTasks(doc, tasks, { source, createdBy: 'claude' }), FILE);
-  const data = { added: result.added.map(brief), skipped: result.skipped };
+  const today = localDate();
+  // The list drops a time that has no date; "at 3pm" on its own means today.
+  const inputs = tasks.map(t => (t.time && !t.due ? { ...t, due: today } : t));
+  const { result } = mutate(doc => addTasks(doc, inputs, { source, createdBy: 'claude' }), FILE);
+  const data = { today, added: result.added.map(brief), skipped: result.skipped };
   log(`add_tasks: +${result.added.length}, skipped ${result.skipped.length}`, meeting ? `(meeting ${meeting.id})` : '');
   return reply(data, `Added ${result.added.length} task(s)` + (result.skipped.length ? `, skipped ${result.skipped.length} (duplicates or empty)` : '') + '.');
 });

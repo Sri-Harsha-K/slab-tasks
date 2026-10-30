@@ -15,7 +15,8 @@
     "brand": "node scripts/brand.mjs",
     "test": "node --test test/*.test.js",
     "test:mcp": "npm run build:mcp && node --test test/mcp.test.mjs",
-    "test:e2e": "vite build && node test/e2e.mjs"
+    "test:e2e": "vite build && node test/e2e.mjs",
+    "dist:mcpb": "npm run build:mcp && node scripts/pack-extension.mjs"
   },
   "build": {
     "appId": "com.slab.tasks",
@@ -80,6 +81,7 @@
     }
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.32.2",

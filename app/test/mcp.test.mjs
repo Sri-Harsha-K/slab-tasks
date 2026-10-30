@@ -88,6 +88,17 @@ test('scheduled runs search from the previous run, held back for unfinished note
   assert.ok(fs.existsSync(path.join(path.dirname(FILE), 'automation.json')));
 });
 
+test('one-off task from chat: date + time kept, a time alone means today', async () => {
+  let r = await call('add_tasks', { tasks: [{ title: 'Send deck to Priya', due: '2026-10-31', time: '15:00', notes: 'Deck from the sales chat' }] });
+  assert.deepEqual([r.structuredContent.added[0].due, r.structuredContent.added[0].time], ['2026-10-31', '15:00']);
+  assert.equal(r.structuredContent.added[0].meeting, undefined);
+  r = await call('add_tasks', { tasks: [{ title: 'Call the bank', time: '09:30' }] });
+  assert.equal(r.structuredContent.added[0].due, r.structuredContent.today);
+  assert.equal(r.structuredContent.added[0].time, '09:30');
+  for (const t of read(FILE).tasks.filter(t => ['Send deck to Priya', 'Call the bank'].includes(t.title))) await call('delete_task', { id: t.id });
+  assert.match(client.getInstructions(), /One-off tasks from chat/);
+});
+
 test('list, update, complete, delete', async () => {
   let r = await call('list_tasks', {});
   assert.equal(r.structuredContent.total, 2);

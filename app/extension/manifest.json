@@ -1,0 +1,55 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/dist/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "slab-tasks",
+  "display_name": "Slab Tasks",
+  "version": "1.0.0",
+  "description": "Your Slab Tasks to-do list: add tasks with a date and time, list, update and complete them, and turn meeting notes into to-dos.",
+  "long_description": "Connects Claude to the Slab Tasks desktop app on this PC. Ask things like \"add a task to send the deck to Priya on Friday at 3pm\" or \"what's due today?\". Tasks Claude adds show up in the app straight away, tagged CLAUDE. Works with meeting-notes connectors such as Wispr Flow to add only your own action items.",
+  "author": { "name": "Sri Harsha Kalaga", "url": "https://github.com/Sri-Harsha-K" },
+  "repository": { "type": "git", "url": "https://github.com/Sri-Harsha-K/slab-tasks" },
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/server.mjs"],
+      "env": {
+        "SLAB_TASKS_OWNER": "${user_config.owner}",
+        "SLAB_TASKS_SINCE": "${user_config.since}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "add_tasks", "description": "Add tasks, optionally with a due date and time, or from a meeting" },
+    { "name": "list_tasks", "description": "List today's, upcoming, all or finished tasks" },
+    { "name": "update_task", "description": "Change a task's title, notes, date, time or colour, or complete it" },
+    { "name": "delete_task", "description": "Remove a task" },
+    { "name": "check_meetings", "description": "Tell which meetings were already turned into tasks" },
+    { "name": "mark_meetings_processed", "description": "Record meetings that had no tasks for you" },
+    { "name": "start_run", "description": "Scheduled runs: the window of meetings to read" },
+    { "name": "finish_run", "description": "Scheduled runs: save where the next run starts" }
+  ],
+  "prompts": [
+    { "name": "tasks_from_meetings", "description": "Read meeting notes and add your action items", "arguments": ["when"], "text": "Create Slab Tasks to-dos from my meetings (${arguments.when})." }
+  ],
+  "user_config": {
+    "owner": {
+      "type": "string",
+      "title": "Your name",
+      "description": "Your name as it appears in meetings, so Claude only adds your own action items.",
+      "required": true
+    },
+    "since": {
+      "type": "string",
+      "title": "Ignore meetings before",
+      "description": "Optional ISO time (e.g. 2026-10-29T21:00:00Z). Meetings that started earlier are never turned into tasks automatically.",
+      "required": false,
+      "default": ""
+    }
+  },
+  "keywords": ["tasks", "todo", "meetings", "productivity"],
+  "license": "UNLICENSED",
+  "compatibility": { "platforms": ["win32"], "runtimes": { "node": ">=20.0.0" } }
+}
