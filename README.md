@@ -8,6 +8,18 @@ Claude Desktop / Claude Code
   └─ slab-tasks MCP (stdio) → %APPDATA%\Slab Tasks\tasks.json ← Slab Tasks app (watches the file, updates live)
 ```
 
+![Slab Tasks: tasks grouped by meeting, with the ones Claude added tagged CLAUDE](docs/screenshots/app.png)
+
+<p>
+  <img src="docs/screenshots/reminder.png" alt="A DUE NOW reminder pop-up with Dismiss and Snooze" width="420">
+</p>
+
+<details><summary>Editing a task</summary>
+
+![Edit task form with notes, due date, time, colour and the meeting it came from](docs/screenshots/edit.png)
+
+</details>
+
 ## Install
 
 1. Run `app\release\Slab-Tasks-Setup-<version>.exe` (build it with `npm run dist:win`).
