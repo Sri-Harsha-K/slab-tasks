@@ -11,8 +11,11 @@ Claude Desktop / Claude Code
 ![Slab Tasks: tasks grouped by meeting, with the ones Claude added tagged CLAUDE](docs/screenshots/app.png)
 
 <p>
-  <img src="docs/screenshots/reminder.png" alt="A DUE NOW reminder pop-up with Dismiss and Snooze" width="420">
+  <img src="docs/screenshots/from-claude.png" alt="FROM CLAUDE pop-up shown when Claude adds a task from chat" width="380">
+  &nbsp;
+  <img src="docs/screenshots/reminder.png" alt="A DUE NOW reminder pop-up with Dismiss and Snooze" width="380">
 </p>
+<p><sub>Left: Claude added a task from chat. Right: a reminder when a task is due. Both pop up from the tray, even with the window closed.</sub></p>
 
 <details><summary>Editing a task</summary>
 
