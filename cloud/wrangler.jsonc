@@ -7,7 +7,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     // The URL MCP clients connect to. Set it to your deployed URL: https://slab-tasks.<subdomain>.workers.dev/mcp
-    "MCP_RESOURCE": "http://localhost:8788/mcp",
+    "MCP_RESOURCE": "https://slab-tasks.slab-tasks-cloud.workers.dev/mcp",
     // The only GitHub account allowed to sign in.
     "ALLOWED_GITHUB_LOGIN": "Sri-Harsha-K",
     // Your name as it appears in meetings, your time zone, and the backfill cutoff (optional ISO time).
@@ -20,9 +20,9 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TaskStore"] }],
   // Created with: npx wrangler kv namespace create OAUTH_KV   (paste the id here)
-  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "<Add-KV-ID>" }],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "6659af4daa3944d9bf30693c93238689" }],
   "observability": { "enabled": true },
-  "dev": { "port": 8788 },
-  // Set with: npx wrangler secret put <NAME>   (locally: in .dev.vars)
-  "secrets": { "required": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "COOKIE_ENCRYPTION_KEY"] }
+  "dev": { "port": 8788 }
+  // Secrets (set with: npx wrangler secret put <NAME>; locally in .dev.vars):
+  // GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, COOKIE_ENCRYPTION_KEY. Sign-in fails until all three are set.
 }
