@@ -1,0 +1,24 @@
+{
+  "name": "slab-tasks-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Slab Tasks as a remote MCP connector on Cloudflare Workers, for claude.ai on web and mobile",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.2.4",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "agents": "^0.29.0",
+    "hono": "^4.13.14",
+    "octokit": "^5.0.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "wrangler": "4.150"
+  }
+}

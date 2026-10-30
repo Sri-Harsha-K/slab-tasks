@@ -204,6 +204,10 @@ Layout: `shared/` holds the task model and file store, used by both the app and 
 
 Not yet linked to Slab. The task file format leaves room for Slab to show due tasks on its calendar later.
 
+## Cloud connector (optional, self-hosted)
+
+Want Slab Tasks in Claude on the **web and mobile** too? [`cloud/`](cloud/README.md) runs the same tools as a remote connector on your own Cloudflare account, with GitHub sign-in limited to you. It's optional: the desktop app and extension don't need it.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
