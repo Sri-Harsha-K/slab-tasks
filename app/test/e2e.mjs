@@ -102,6 +102,27 @@ try {
   await p.locator('button', { hasText: /^Delete$/i }).click(); await wait(300);
   check('delete removes from file', !read(FILE).tasks.some(t => t.title === 'Call the bank'));
 
+  // Reminder: a timed task that has just come due pops up in the corner window, once.
+  const minuteAgo = new Date(Date.now() - 60e3);
+  const hhmm = String(minuteAgo.getHours()).padStart(2, '0') + ':' + String(minuteAgo.getMinutes()).padStart(2, '0');
+  mutate(doc => addTasks(doc, [{ title: 'Stand-up with Sam', due: fmt(minuteAgo), time: hhmm }], { now: new Date(Date.now() - 3600e3).toISOString() }), FILE);
+  const notifierPage = async () => app.windows().find(w => w.url().includes('#notifier'));
+  let pop = null;
+  for (let i = 0; i < 25 && !pop; i++) {
+    await wait(1000);
+    const np = await notifierPage();
+    if (np && await np.locator('text=Stand-up with Sam').count()) pop = np;
+  }
+  check('reminder: due task pops up', !!pop);
+  const reminder = pop && pop.locator('[role=status]', { hasText: 'Stand-up with Sam' });
+  const reminderText = reminder ? await reminder.innerText() : '';
+  check('reminder: labelled DUE NOW with its time', reminderText.includes('DUE NOW') && reminderText.includes(hhmm), reminderText.replace(/\s+/g, ' '));
+  if (pop) {
+    await pop.screenshot({ path: OUT + '/7-reminder.png' });
+    await reminder.locator('[aria-label=Dismiss]').click(); await wait(16000);  // one more reminder check
+    check('reminder: fires only once', await pop.locator('text=Stand-up with Sam').count() === 0);
+  }
+
   // Narrow window: no horizontal overflow
   await p.setViewportSize({ width: 420, height: 800 }).catch(() => {});
   const win = await app.browserWindow(p);

@@ -27,7 +27,7 @@ const known = new Set();  // task ids already seen, so only new ones from Claude
 
 // Small desktop-only state (separate from the task list).
 const stateFile = () => path.join(app.getPath('userData'), 'desktop.json');
-let desk = { trayHintShown: false, autoStartInitialised: false };
+let desk = { trayHintShown: false, autoStartInitialised: false, reminded: {} };  // reminded: reminder key → when it fired
 const loadDesk = () => { try { desk = { ...desk, ...JSON.parse(fs.readFileSync(stateFile(), 'utf8')) }; } catch (e) {} };
 const saveDesk = () => { try { fs.writeFileSync(stateFile(), JSON.stringify(desk)); } catch (e) {} };
 
@@ -157,6 +157,33 @@ function pushDoc(doc) {
   if (win) win.webContents.send('tasks:changed', doc);
 }
 
+// ---- Reminders: timed tasks pop up when they're due, even with the window closed -------------------
+
+const REMINDER_CHECK_MS = 15000;
+const LATE_MS = 5 * 60 * 1000;  // later than this (PC was off or asleep) → "MISSED" instead of "DUE NOW"
+
+function checkReminders() {
+  const doc = readNow();
+  if (!doc) return;
+  const fired = desk.reminded || {};
+  const now = Date.now();
+  const due = core.dueReminders(doc.tasks, now, new Set(Object.keys(fired)));
+  // Forget reminders older than the grace period; they can never fire again anyway.
+  for (const [k, at] of Object.entries(fired)) if (now - at > 2 * core.REMINDER_GRACE_MS) delete fired[k];
+  for (const t of due) {
+    fired[core.reminderKey(t)] = now;
+    const late = now - core.dueAt(t) > LATE_MS;
+    showToast({
+      id: 'due-' + core.reminderKey(t), kind: late ? 'MISSED' : 'DUE NOW', color: t.color, sound: true,
+      title: t.title,
+      body: (late ? 'Was due ' : 'Due ') + t.time + (t.source && t.source.title ? ' · ' + t.source.title : t.notes ? ' · ' + t.notes.split(/\r?\n/)[0].slice(0, 80) : ''),
+      open: { id: t.id },
+    });
+  }
+  desk.reminded = fired;
+  if (due.length) saveDesk();
+}
+
 let watchTimer = null;
 function watchFile() {
   fs.mkdirSync(path.dirname(FILE), { recursive: true });
@@ -274,6 +301,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     createTray();
     createWindow(process.argv.includes(HIDDEN_ARG));
+    setTimeout(checkReminders, 3000);  // catch up on anything missed while the app was off
+    setInterval(checkReminders, REMINDER_CHECK_MS).unref();
   });
   app.on('window-all-closed', () => app.quit());
 }

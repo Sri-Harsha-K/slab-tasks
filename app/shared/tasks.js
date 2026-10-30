@@ -194,3 +194,25 @@ export function counts(tasks, today) {
     done: tasks.length - open.length,
   };
 }
+
+// ---- Reminders: a timed task pops up when its time comes -------------------------------------------
+
+export const REMINDER_GRACE_MS = 6 * 3600e3;
+/** Identifies one reminder. Moving the task to another date or time gives a new key, so it fires again. */
+export const reminderKey = (t) => t.id + '|' + t.due + 'T' + t.time;
+/** When the task is due, in local time (ms), or NaN without a date and time. */
+export const dueAt = (t) => (t.due && t.time ? new Date(t.due + 'T' + t.time + ':00').getTime() : NaN);
+
+/**
+ * Open timed tasks whose reminder should show now: due at or before `now`, not fired yet (`fired` holds
+ * reminder keys), and not more than `graceMs` late (missed while the PC was off still reminds, days later
+ * doesn't). A task added or edited after its time had passed isn't reminded: you just saw it.
+ */
+export function dueReminders(tasks, now = Date.now(), fired = new Set(), graceMs = REMINDER_GRACE_MS) {
+  return tasks.filter(t => {
+    if (t.done || fired.has(reminderKey(t))) return false;
+    const at = dueAt(t);
+    if (!(at <= now) || now - at > graceMs) return false;
+    return !(Date.parse(t.updatedAt || t.createdAt) > at);
+  }).sort((a, b) => dueAt(a) - dueAt(b));
+}

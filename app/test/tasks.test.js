@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emptyDoc, normalizeDoc, normalizeTask, normTitle, addTasks, updateTask, deleteTask, clearDone, markProcessed, isProcessed,
-  viewTasks, groupTasks, counts, CLAUDE_COLOR, DEFAULT_COLOR,
+  viewTasks, groupTasks, counts, dueReminders, reminderKey, CLAUDE_COLOR, DEFAULT_COLOR,
 } from '../shared/tasks.js';
 
 const NOW = '2026-10-29T10:00:00.000Z';
@@ -109,4 +109,29 @@ test('viewTasks + groupTasks + counts', () => {
   const gm = groupTasks(viewTasks(doc.tasks, 'all', today), 'meeting', today, (k) => k);
   assert.deepEqual(gm.map(x => x.label), ['Added by hand', 'Sprint review']);
   assert.deepEqual(counts(doc.tasks, today), { open: 5, overdue: 1, today: 1, upcoming: 1, claude: 1, done: 0 });
+});
+
+test('dueReminders: fires once at the due time, re-arms when moved, skips stale and done', () => {
+  const at = (s) => new Date(s).getTime();
+  const doc = emptyDoc();
+  addTasks(doc, [
+    { title: 'call', due: '2026-10-30', time: '15:45' },
+    { title: 'later', due: '2026-10-30', time: '17:00' },
+    { title: 'no time', due: '2026-10-30' },
+    { title: 'long ago', due: '2026-10-29', time: '08:00' },
+    { title: 'finished', due: '2026-10-30', time: '15:00' },
+  ], { now: '2026-10-29T12:00:00.000Z' });
+  updateTask(doc, doc.tasks.find(t => t.title === 'finished').id, { done: true }, '2026-10-29T12:00:00.000Z');
+  const names = (now, fired) => dueReminders(doc.tasks, now, fired).map(t => t.title);
+  assert.deepEqual(names(at('2026-10-30T15:44:00'), new Set()), []);
+  assert.deepEqual(names(at('2026-10-30T15:45:10'), new Set()), ['call']);
+  const call = doc.tasks.find(t => t.title === 'call');
+  const fired = new Set([reminderKey(call)]);
+  assert.deepEqual(names(at('2026-10-30T15:46:00'), fired), [], 'fires only once');
+  assert.deepEqual(names(at('2026-10-30T18:00:00'), fired), ['later'], 'missed while off: still reminded');
+  assert.deepEqual(names(at('2026-10-31T09:00:00'), new Set()), [], 'more than 6h late: dropped');
+  updateTask(doc, call.id, { time: '16:30' }, '2026-10-30T15:50:00');
+  assert.deepEqual(names(at('2026-10-30T16:31:00'), fired), ['call'], 'moved: re-armed');
+  updateTask(doc, call.id, { time: '16:00' }, '2026-10-30T16:40:00');
+  assert.deepEqual(names(at('2026-10-30T16:41:00'), new Set()), [], 'set to a time already past: no pop-up');
 });

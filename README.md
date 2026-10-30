@@ -130,6 +130,7 @@ Check the tasks in the app. If it picked up someone else's items, add them to `{
 - Views: **Today** (overdue + due today), **Upcoming**, **All**, **Done**. Group by date or by meeting.
 - Quick add: type and press Enter (Shift+Enter opens the full form). `N` new · `/` search · `1–4` views · `Esc` close.
 - Click a task to edit its notes, due date and time, and colour. Click ☐ to complete it.
+- Reminders: a task with a date **and** time pops up **DUE NOW** in the corner with a chime when it's due, even when the window is closed (the app keeps running in the tray). If the PC was off or asleep at that time, it shows **MISSED** once when the app is back, but only within 6 hours. Moving a task to a new date or time re-arms its reminder. Click the pop-up to open the task.
 - The side panel shows overdue / today / upcoming / from-Claude counts and the meetings Claude has read.
 - Data: `%APPDATA%\Slab Tasks\tasks.json` (••• → Show data file). The app and the MCP server lock the file and write it atomically, so neither overwrites the other's changes.
 
