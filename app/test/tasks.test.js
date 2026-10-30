@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emptyDoc, normalizeDoc, normalizeTask, normTitle, addTasks, updateTask, deleteTask, clearDone, markProcessed, isProcessed,
-  viewTasks, groupTasks, counts, dueReminders, reminderKey, CLAUDE_COLOR, DEFAULT_COLOR,
+  viewTasks, groupTasks, counts, dueReminders, reminderKey, mergeDocs, sameDoc, CLAUDE_COLOR, DEFAULT_COLOR,
 } from '../shared/tasks.js';
 
 const NOW = '2026-10-29T10:00:00.000Z';
@@ -134,4 +134,32 @@ test('dueReminders: fires once at the due time, re-arms when moved, skips stale 
   assert.deepEqual(names(at('2026-10-30T16:31:00'), fired), ['call'], 'moved: re-armed');
   updateTask(doc, call.id, { time: '16:00' }, '2026-10-30T16:40:00');
   assert.deepEqual(names(at('2026-10-30T16:41:00'), new Set()), [], 'set to a time already past: no pop-up');
+});
+
+test('mergeDocs: newer edit wins, deletions stick, processed meetings union, idempotent', () => {
+  const T0 = '2026-10-30T10:00:00.000Z', T1 = '2026-10-30T11:00:00.000Z', T2 = '2026-10-30T12:00:00.000Z';
+  const base = emptyDoc();
+  addTasks(base, [{ title: 'shared' }, { title: 'to delete' }, { title: 'edited then deleted' }], { now: T0 });
+  const [shared, del, edDel] = base.tasks;
+  const pc = normalizeDoc(JSON.parse(JSON.stringify(base))), cloud = normalizeDoc(JSON.parse(JSON.stringify(base)));
+  addTasks(pc, [{ title: 'made on PC' }], { now: T1 });
+  addTasks(cloud, [{ title: 'made on phone' }], { source: { meetingId: 'm1', title: 'Standup' }, createdBy: 'claude', now: T1 });
+  updateTask(pc, shared.id, { notes: 'pc note' }, T1);
+  updateTask(cloud, shared.id, { notes: 'phone note' }, T2);
+  deleteTask(pc, del.id, T1);
+  deleteTask(cloud, edDel.id, T1);
+  updateTask(pc, edDel.id, { notes: 'edited later' }, T2);
+  const m = mergeDocs(pc, cloud);
+  const byTitle = Object.fromEntries(m.tasks.map(t => [t.title, t]));
+  assert.deepEqual(Object.keys(byTitle).sort(), ['edited then deleted', 'made on PC', 'made on phone', 'shared']);
+  assert.equal(byTitle.shared.notes, 'phone note', 'newer edit wins');
+  assert.equal(byTitle['edited then deleted'].notes, 'edited later', 'an edit after the deletion keeps it');
+  assert.ok(m.deleted.some(d => d.id === del.id) && !m.deleted.some(d => d.id === edDel.id));
+  assert.ok(isProcessed(m, 'm1'));
+  assert.ok(m.rev > pc.rev);
+  const again = mergeDocs(m, cloud);
+  assert.ok(sameDoc(again, m) && again.rev === m.rev, 'merging again changes nothing');
+  assert.ok(sameDoc(mergeDocs(cloud, pc), m), 'order of the two sides does not matter');
+  clearDone(m, T2);
+  assert.equal(normalizeDoc(JSON.parse(JSON.stringify(m))).deleted.length, m.deleted.length, 'deletions survive a save and reload');
 });

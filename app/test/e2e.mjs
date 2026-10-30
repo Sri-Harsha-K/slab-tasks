@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mutate, read } from '../shared/store.js';
-import { addTasks } from '../shared/tasks.js';
+import { addTasks, mergeDocs, emptyDoc, sameDoc } from '../shared/tasks.js';
+import http from 'node:http';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(here, '.out');
@@ -24,9 +25,24 @@ mutate(doc => {
   addTasks(doc, [{ title: 'Renew passport', due: yesterday }, { title: 'Water the plants', due: today, time: '18:00', color: '#7CE38B' }, { title: 'Plan offsite agenda', due: later }]);
 }, FILE);
 
+// A stand-in for the cloud connector's /sync endpoint (same merge as cloud/src/index.ts).
+const SYNC_KEY = 'e2e-sync-key-0123456789abcdef';
+let cloudDoc = emptyDoc();
+const cloud = http.createServer((req, res) => {
+  let body = '';
+  req.on('data', d => (body += d)).on('end', () => {
+    if (req.url !== '/sync' || req.headers.authorization !== 'Bearer ' + SYNC_KEY) { res.writeHead(401); return res.end(); }
+    const merged = mergeDocs(cloudDoc, JSON.parse(body));
+    if (!sameDoc(cloudDoc, merged)) cloudDoc = merged;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(cloudDoc));
+  });
+});
+await new Promise(r => cloud.listen(0, '127.0.0.1', r));
+const SYNC_URL = 'http://127.0.0.1:' + cloud.address().port;
+
 // Runs off-screen and muted (SLAB_TASKS_HEADLESS), so nothing appears on the desktop of the machine running it.
 // Runs the unpackaged app: the packaged build turns off the inspector fuse Playwright needs to attach.
-const app = await electron.launch({ args: [path.join(here, '..')], env: { ...process.env, SLAB_TASKS_FILE: FILE, SLAB_TASKS_USER_DATA: path.join(tmp, 'profile'), SLAB_TASKS_HEADLESS: '1' } });
+const app = await electron.launch({ args: [path.join(here, '..')], env: { ...process.env, SLAB_TASKS_FILE: FILE, SLAB_TASKS_USER_DATA: path.join(tmp, 'profile'), SLAB_TASKS_HEADLESS: '1', SLAB_TASKS_SYNC_URL: SYNC_URL, SLAB_TASKS_SYNC_KEY: SYNC_KEY, SLAB_TASKS_SYNC_MS: '1500' } });
 try {
   const p = await app.firstWindow();
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
@@ -147,6 +163,23 @@ try {
     check('pop-up: fades out on its own after 5 s', seenFade && left === 0, 'seen=' + seenFade + ' left=' + left);
   }
 
+  // Cloud sync: the PC's list goes up, a task Claude added on the phone comes down and pops up.
+  await wait(2500);
+  check('sync: PC tasks reach the cloud', cloudDoc.tasks.some(t => t.title === 'Renew passport'));
+  check('sync: a task deleted on the PC is deleted in the cloud', !cloudDoc.tasks.some(t => t.title === 'Call the bank') && cloudDoc.deleted.length > 0);
+  const phoneAt = new Date().toISOString();
+  cloudDoc = { ...cloudDoc, rev: cloudDoc.rev + 1, tasks: [...cloudDoc.tasks, { id: 'phone-1', title: 'Added on my phone', due: fmt(new Date()), createdAt: phoneAt, updatedAt: phoneAt, createdBy: 'claude' }] };
+  await p.waitForSelector('[data-task]:has-text("Added on my phone")', { timeout: 8000 }).catch(() => {});
+  check('sync: phone task shows in the app', await p.locator('[data-task]', { hasText: 'Added on my phone' }).count() === 1);
+  check('sync: phone task saved to tasks.json', read(FILE).tasks.some(t => t.id === 'phone-1'));
+  let phonePop = false;
+  for (let i = 0; i < 10 && !phonePop; i++) { const np = await notifierPage(); phonePop = !!np && await np.locator('text=Added on my phone').count() > 0; if (!phonePop) await wait(300); }
+  check('sync: FROM CLAUDE pop-up for the phone task', phonePop);
+  await p.locator('[data-pop-trigger="menu"]').click(); await wait(250);
+  const syncLine = await p.locator('button.h-menuitem', { hasText: 'Cloud sync' }).innerText().catch(() => '');
+  await p.locator('[data-pop-trigger="menu"]').click(); await wait(150);
+  check('sync: menu shows it is on', /On · synced/.test(syncLine), syncLine.replace(/s+/g, ' '));
+
   // Narrow window: no horizontal overflow
   await p.setViewportSize({ width: 420, height: 800 }).catch(() => {});
   const win = await app.browserWindow(p);
@@ -159,6 +192,7 @@ try {
   check('no renderer errors', errs.length === 0, errs.join(' | '));
 } finally {
   await app.close();
+  cloud.close();
 }
 
 for (const [s, n, i] of results) console.log(s, n, i ? '(' + i + ')' : '');

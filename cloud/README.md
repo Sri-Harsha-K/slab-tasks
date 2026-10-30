@@ -65,9 +65,22 @@ Claude sends you through **Sign in with GitHub** once. After that the connector 
 
 Try: *"Add a task to send the deck to Priya on Friday at 3pm"*, then *"What's due today?"*
 
+## Sync with the desktop app
+
+To have tasks Claude adds on claude.ai or your phone show up in the tray app (with the **FROM CLAUDE** pop-up and **DUE NOW** reminders), turn on sync:
+
+1. **Make a sync key:** any random text of at least 24 characters, e.g. `openssl rand -hex 32`. Keep it private: it lets an app read and change your list.
+2. **Store it on the cloud:**
+   ```bash
+   npx wrangler secret put SYNC_TOKEN
+   ```
+3. **Enter it in the app:** ••• → **Cloud sync** → address `https://slab-tasks.<your-subdomain>.workers.dev` and the same key → **Save & sync**.
+
+The app then syncs every 30 seconds, and a few seconds after any change on the PC. Edits merge task by task (the newer edit wins), deletions stick on both sides, and it catches up after being offline. The key is stored encrypted for your Windows user.
+
 ## Notes
 
-- **One list, in the cloud.** This list is separate from the desktop app's local file until the desktop app learns to sync with it. Until then, tasks added here don't show in the tray app or trigger its pop-ups.
+- **Without sync**, the cloud list and the desktop app's list are separate.
 - **Private.** Only `ALLOWED_GITHUB_LOGIN` gets a token, and every MCP request is checked against it again.
 - **Cost:** a personal list fits comfortably within Cloudflare's free tier (Workers, Durable Objects, KV).
 

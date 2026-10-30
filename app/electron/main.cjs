@@ -33,7 +33,8 @@ const known = new Set();  // task ids already seen, so only new ones from Claude
 const stateFile = () => path.join(app.getPath('userData'), 'desktop.json');
 let desk = { trayHintShown: false, autoStartInitialised: false, reminded: {} };  // reminded: reminder key → when it fired
 const loadDesk = () => { try { desk = { ...desk, ...JSON.parse(fs.readFileSync(stateFile(), 'utf8')) }; } catch (e) {} };
-const saveDesk = () => { try { fs.writeFileSync(stateFile(), JSON.stringify(desk)); } catch (e) {} };
+// The sync key never goes to disk in the clear: desk.sync.key is dropped here and kept sealed in syncSealed.
+const saveDesk = () => { try { fs.writeFileSync(stateFile(), JSON.stringify({ ...desk, sync: desk.sync ? { url: desk.sync.url } : null })); } catch (e) {} };
 
 // ---- Main window: closing it hides Slab Tasks to the tray so Claude's new tasks still pop up -----
 
@@ -165,6 +166,7 @@ function pushDoc(doc) {
     });
   }
   if (win) win.webContents.send('tasks:changed', doc);
+  if (!applyingSync) syncSoon();  // a change made on this PC (app, Claude Desktop, scheduler): send it up
 }
 
 // ---- Reminders: timed tasks pop up when they're due, even with the window closed -------------------
@@ -201,6 +203,46 @@ function checkReminders() {
 
 const SNOOZE_MS = 10 * 60 * 1000;
 
+// ---- Cloud sync (optional): merge this PC's list with the self-hosted cloud connector (cloud/) ------
+// Every SYNC_MS, and a few seconds after a local change, the whole list is sent to <url>/sync; the cloud
+// merges it with its copy (newer edit wins, deletions stick) and returns the result, which is merged into
+// tasks.json. Tasks Claude added on the phone then pop up here like any other.
+
+const SYNC_MS = +process.env.SLAB_TASKS_SYNC_MS || 30 * 1000;  // tests sync faster
+const syncConfig = () => (process.env.SLAB_TASKS_SYNC_URL
+  ? { url: process.env.SLAB_TASKS_SYNC_URL, key: process.env.SLAB_TASKS_SYNC_KEY || '' }
+  : desk.sync && desk.sync.url && desk.sync.key ? desk.sync : null);
+let syncState = { on: false, ok: null, at: '', error: '' };
+let syncing = false, syncSoonTimer = null;
+
+const sendSyncState = () => { if (win) win.webContents.send('sync:state', syncState); };
+
+async function syncNow() {
+  const cfg = syncConfig();
+  syncState = { ...syncState, on: !!cfg };
+  if (!cfg || syncing) return sendSyncState();
+  const local = readNow();
+  if (!local) return;
+  syncing = true;
+  try {
+    const res = await fetch(cfg.url.replace(/\/+$/, '') + '/sync', {
+      method: 'POST', body: JSON.stringify(local), signal: AbortSignal.timeout(15000),
+      headers: { authorization: 'Bearer ' + cfg.key, 'content-type': 'application/json' },
+    });
+    if (!res.ok) throw new Error(res.status === 401 ? 'Wrong sync key' : res.status === 404 ? 'Sync is not set up on the cloud (SYNC_TOKEN)' : 'Cloud answered ' + res.status);
+    const remote = await res.json();
+    // Merge again under the file lock, in case something changed here while the request was out.
+    const now = readNow();
+    if (now && !core.sameDoc(now, core.mergeDocs(now, remote))) {
+      change(doc => { const m = core.mergeDocs(doc, remote); doc.tasks = m.tasks; doc.processedMeetings = m.processedMeetings; doc.deleted = m.deleted; }, { fromSync: true });
+    }
+    syncState = { on: true, ok: true, at: new Date().toISOString(), error: '' };
+  } catch (e) {
+    syncState = { on: true, ok: false, at: new Date().toISOString(), error: e.name === 'TimeoutError' ? 'Cloud did not answer' : e.message };
+  } finally { syncing = false; sendSyncState(); }
+}
+const syncSoon = () => { if (!syncConfig()) return; clearTimeout(syncSoonTimer); syncSoonTimer = setTimeout(syncNow, 3000); };
+
 let watchTimer = null;
 function watchFile() {
   fs.mkdirSync(path.dirname(FILE), { recursive: true });
@@ -216,7 +258,15 @@ function watchFile() {
   setInterval(() => pushDoc(readNow()), 5000).unref();
 }
 
-const change = (fn) => { const { doc, result } = store.mutate(fn, FILE); known.clear(); doc.tasks.forEach(t => known.add(t.id)); pushDoc(doc); return { doc, result }; };
+let applyingSync = false;
+// Edits from this window are already on screen, so they raise no pop-up; edits arriving from the cloud do.
+const change = (fn, { fromSync = false } = {}) => {
+  const { doc, result } = store.mutate(fn, FILE);
+  if (!fromSync) { known.clear(); doc.tasks.forEach(t => known.add(t.id)); }
+  applyingSync = fromSync;
+  try { pushDoc(doc); } finally { applyingSync = false; }
+  return { doc, result };
+};
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isId = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 
@@ -286,6 +336,35 @@ ipcMain.on('toast:open', (e, id) => {
 ipcMain.handle('autostart:get', (e) => (fromMain(e) ? !!getAutoStart() : false));
 ipcMain.handle('autostart:set', (e, on) => (fromMain(e) ? !!setAutoStart(on === true) : false));
 ipcMain.handle('mcp:copyConfig', (e) => { if (!fromMain(e)) return false; clipboard.writeText(mcpConfig()); return true; });
+// Cloud sync settings. The key is kept in desktop.json, encrypted with Windows' per-user protection when available.
+const { safeStorage } = require('electron');
+const sealKey = (k) => (safeStorage.isEncryptionAvailable() ? { enc: safeStorage.encryptString(k).toString('base64') } : { plain: k });
+const openKey = (v) => { try { return v && v.enc ? safeStorage.decryptString(Buffer.from(v.enc, 'base64')) : (v && v.plain) || ''; } catch (e) { return ''; } };
+ipcMain.handle('sync:get', (e) => {
+  if (!fromMain(e)) return null;
+  const cfg = syncConfig();
+  return { url: cfg ? cfg.url : '', hasKey: !!(cfg && cfg.key), state: syncState };
+});
+ipcMain.handle('sync:set', async (e, input) => {
+  if (!fromMain(e) || !isObj(input)) return { ok: false, error: 'Bad request' };
+  let url;
+  try { url = new URL(String(input.url || '').trim()); } catch (err) { return { ok: false, error: "That isn't a web address" }; }
+  if (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname)) return { ok: false, error: 'The address must start with https://' };
+  const key = String(input.key || '').trim() || (desk.syncSealed ? openKey(desk.syncSealed) : '');
+  if (key.length < 24) return { ok: false, error: 'The sync key must be at least 24 characters' };
+  desk.syncSealed = sealKey(key);
+  desk.sync = { url: url.origin, key };
+  saveDesk();
+  await syncNow();
+  return { ok: syncState.ok === true, error: syncState.error, state: syncState };
+});
+ipcMain.handle('sync:off', (e) => {
+  if (!fromMain(e)) return false;
+  desk.sync = null; desk.syncSealed = null; saveDesk();
+  syncState = { on: false, ok: null, at: '', error: '' }; sendSyncState();
+  return true;
+});
+ipcMain.handle('sync:now', async (e) => { if (!fromMain(e)) return null; await syncNow(); return syncState; });
 ipcMain.on('data:show', (e) => { if (fromMain(e)) shell.showItemInFolder(FILE); });
 ipcMain.on('app:quit', (e) => { if (fromMain(e)) quit(); });
 
@@ -321,6 +400,7 @@ if (!app.requestSingleInstanceLock()) {
     if (doc) { doc.tasks.forEach(t => known.add(t.id)); lastRev = doc.rev; }
     watchFile();
     loadDesk();
+    if (desk.sync && desk.sync.url) desk.sync = { url: desk.sync.url, key: openKey(desk.syncSealed) };
     // The installed app starts with Windows by default so Claude's tasks pop up after a restart (switchable in the tray / ••• menu).
     if (!desk.autoStartInitialised) {
       desk.autoStartInitialised = true; saveDesk();
@@ -330,6 +410,8 @@ if (!app.requestSingleInstanceLock()) {
     createWindow(process.argv.includes(HIDDEN_ARG));
     setTimeout(checkReminders, 3000);  // catch up on anything missed while the app was off
     setInterval(checkReminders, REMINDER_CHECK_MS).unref();
+    setTimeout(syncNow, 1500);
+    setInterval(syncNow, SYNC_MS).unref();
   });
   app.on('window-all-closed', () => app.quit());
 }

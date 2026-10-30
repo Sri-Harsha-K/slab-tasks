@@ -69,3 +69,23 @@ test('the real entry refuses requests without a sign-in token', async () => {
   const meta = await fetch(new URL('/.well-known/oauth-authorization-server', await real.url));
   assert.equal(meta.status, 200, 'sign-in metadata is published for claude.ai');
 });
+
+test('desktop sync: key required, merges both ways, no-op saves nothing', async () => {
+  const url = new URL('/sync', base), KEY = 'test-sync-key-0123456789abcdef';
+  const sync = (body, key = KEY) => fetch(url, { method: body ? 'POST' : 'GET', headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
+  assert.equal((await sync(null, 'wrong-key-wrong-key-wrong')).status, 401);
+  assert.equal((await fetch(url)).status, 401);
+  const cloud = await (await sync()).json();
+  assert.ok(cloud.tasks.some(t => t.title === 'Send the deck to Priya'), 'cloud list comes down');
+  // The PC adds one task and deletes one the cloud has.
+  const gone = cloud.tasks.find(t => t.title === 'Send the deck to Priya');
+  const now = new Date().toISOString();
+  const pc = { ...cloud, tasks: [...cloud.tasks.filter(t => t.id !== gone.id), { id: 'pc-1', title: 'Made on the PC', createdAt: now, updatedAt: now, createdBy: 'me' }], deleted: [{ id: gone.id, at: now }] };
+  const merged = await (await sync(pc)).json();
+  assert.ok(merged.tasks.some(t => t.id === 'pc-1') && !merged.tasks.some(t => t.id === gone.id));
+  const l = await call('list_tasks', { view: 'all', limit: 500 });
+  assert.ok(l.tasks.some(t => t.title === 'Made on the PC'), 'Claude sees the PC task');
+  assert.ok(!l.tasks.some(t => t.id === gone.id), 'and not the one deleted on the PC');
+  const again = await (await sync(merged)).json();
+  assert.equal(again.rev, merged.rev, 'syncing an up-to-date list saves nothing');
+});

@@ -8,7 +8,7 @@ import { createMcpHandler } from "agents/mcp/server";
 // @ts-ignore: plain JS shared with the desktop app
 import { defineTools, objectSchema } from "../../app/shared/tools.js";
 // @ts-ignore
-import { emptyDoc, normalizeDoc } from "../../app/shared/tasks.js";
+import { emptyDoc, normalizeDoc, mergeDocs, sameDoc } from "../../app/shared/tasks.js";
 import { GitHubHandler } from "./github-handler";
 import type { Props } from "./utils";
 
@@ -78,7 +78,7 @@ const apiHandler = {
 	},
 } satisfies ExportedHandler<Env>;
 
-export default new OAuthProvider<Env>({
+const provider = new OAuthProvider<Env>({
 	apiHandler,
 	apiRoute: "/mcp",
 	authorizeEndpoint: "/authorize",
@@ -88,3 +88,39 @@ export default new OAuthProvider<Env>({
 	// The URL MCP clients connect to. Every token is bound to it.
 	resourceMetadata: { resource: env.MCP_RESOURCE },
 });
+
+// ---- Desktop sync: the tray app merges its local list with this one ---------------------------------
+// POST /sync with the app's whole list; the cloud merges it into its own and returns the result, which
+// the app saves locally. Only open when the SYNC_TOKEN secret is set, and only with that key.
+
+async function sameSecret(a: string, b: string) {
+	const enc = new TextEncoder();
+	const [x, y] = await Promise.all([crypto.subtle.digest("SHA-256", enc.encode(a)), crypto.subtle.digest("SHA-256", enc.encode(b))]);
+	return crypto.subtle.timingSafeEqual(x, y);
+}
+
+export async function handleSync(request: Request) {
+	const key = (env as any).SYNC_TOKEN as string | undefined;
+	if (!key || key.length < 24) return new Response("Not found", { status: 404 });
+	const given = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+	if (!given || !(await sameSecret(given, key))) return new Response("Unauthorized", { status: 401 });
+	if (request.method === "GET") return Response.json(await backend.read());
+	if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+	let incoming: any;
+	try { incoming = normalizeDoc(await request.json()); } catch { return new Response("Bad list", { status: 400 }); }
+	// Nothing new from the app (the usual case): answer without saving, so the list's rev stays put.
+	const now = await backend.read();
+	if (sameDoc(now, mergeDocs(now, incoming))) return Response.json(now);
+	const { doc } = await backend.mutate((cur: any) => {
+		const merged = mergeDocs(cur, incoming);
+		if (!sameDoc(cur, merged)) { cur.tasks = merged.tasks; cur.processedMeetings = merged.processedMeetings; cur.deleted = merged.deleted; }
+	});
+	return Response.json(doc);
+}
+
+export default {
+	fetch(request: Request, bindings: Env, ctx: ExecutionContext) {
+		if (new URL(request.url).pathname === "/sync") return handleSync(request);
+		return provider.fetch(request, bindings, ctx);
+	},
+} satisfies ExportedHandler<Env>;

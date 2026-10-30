@@ -12,7 +12,8 @@
     "ALLOWED_GITHUB_LOGIN": "Sri-Harsha-K",
     "OWNER": "Harsha (Venkata Subrahmanya Sri Harsha Kalaga)",
     "TIME_ZONE": "America/Los_Angeles",
-    "SINCE": "2026-10-29T21:00:00Z"
+    "SINCE": "2026-10-29T21:00:00Z",
+    "SYNC_TOKEN": "test-sync-key-0123456789abcdef"
   },
   "durable_objects": {
     "bindings": [

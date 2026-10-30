@@ -58,6 +58,10 @@ export default class Tasks extends React.Component {
       clearTimeout(this.freshTimer);
       this.freshTimer = setTimeout(() => this.setState({ fresh: {} }), FRESH_MS);
     });
+    if (desktop && window.slab.getSync) {
+      window.slab.getSync().then(sync => sync && this.setState({ sync }));
+      this.offSync = window.slab.onSyncState(state => this.setState(s => ({ sync: { ...(s.sync || {}), state } })));
+    }
     this.offOpen = api.onOpen(({ id }) => { const t = this.state.doc.tasks.find(x => x.id === id); if (t) this.openEdit(t); });
     this.onKey = (e) => {
       const tag = (e.target.tagName || '').toLowerCase();
@@ -91,6 +95,7 @@ export default class Tasks extends React.Component {
     window.removeEventListener('focus', this.load); clearTimeout(this.loadTimer);
     if (this.offChange) this.offChange();
     if (this.offOpen) this.offOpen();
+    if (this.offSync) this.offSync();
   }
 
   // ---- changes --------------------------------------------------------------------------------
@@ -207,6 +212,7 @@ export default class Tasks extends React.Component {
         </div>
         {menu && this.renderMenu(ui)}
         {draft && this.renderModal(ui)}
+        {this.state.syncForm && this.renderSync(ui)}
         {this.renderToasts(ui)}
       </div>
     );
@@ -420,6 +426,64 @@ export default class Tasks extends React.Component {
     );
   }
 
+  syncLabel() {
+    const st = this.state.sync && this.state.sync.state;
+    if (!st || !st.on) return 'Off · use your list from claude.ai and mobile';
+    if (st.ok === false) return 'Not syncing · ' + st.error;
+    return st.at ? 'On · synced ' + new Date(st.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'On · connecting…';
+  }
+
+  openSync = () => {
+    const sync = this.state.sync || {};
+    this.setState({ menu: null, syncForm: { url: sync.url || '', key: '', hasKey: !!sync.hasKey, busy: false, error: '' } });
+  };
+
+  saveSync = async () => {
+    const f = this.state.syncForm;
+    this.setState({ syncForm: { ...f, busy: true, error: '' } });
+    const r = await window.slab.setSync({ url: f.url, key: f.key });
+    const sync = await window.slab.getSync();
+    if (r.ok) { this.setState({ syncForm: null, sync }); this.toast({ kind: 'CLOUD SYNC', title: 'Synced with the cloud', body: 'Tasks from claude.ai and mobile now show up here', color: '#4FD1C5' }); }
+    else this.setState({ sync, syncForm: { ...f, busy: false, error: r.error || 'Could not sync' } });
+  };
+
+  turnSyncOff = async () => {
+    await window.slab.syncOff();
+    this.setState({ syncForm: null, sync: await window.slab.getSync() });
+  };
+
+  renderSync({ mobile }) {
+    const f = this.state.syncForm;
+    const set = (p) => this.setState({ syncForm: { ...f, ...p } });
+    const label = { display: 'flex', flexDirection: 'column', gap: 6, fontFamily: MONO, fontSize: 12, fontWeight: 700 };
+    const input = { height: 44, border: '3px solid #111', background: '#fff', padding: '0 12px', fontFamily: MONO, fontSize: 13, fontWeight: 700, outline: 'none', color: '#111', borderRadius: 14 };
+    const btn = (text, onClick, primary, disabled) => (
+      <button className="h-btn" onClick={onClick} disabled={disabled} style={{ height: 46, padding: '0 18px', border: '3px solid #111', borderRadius: 999, background: primary ? '#111' : '#fff', color: primary ? '#FFD23F' : '#111', fontFamily: SANS, fontSize: 15, fontWeight: 800, textTransform: 'uppercase', cursor: disabled ? 'wait' : 'pointer' }}>{text}</button>
+    );
+    const on = this.state.sync && this.state.sync.state && this.state.sync.state.on;
+    return (
+      <div onClick={() => this.setState({ syncForm: null })} style={{ position: 'fixed', inset: 0, background: 'rgba(17,17,17,0.55)', display: 'flex', padding: mobile ? 10 : 20, zIndex: 50 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ margin: 'auto', width: '100%', maxWidth: 520, background: '#FFF4E0', border: '3px solid #111', boxShadow: '10px 10px 0 #111', borderRadius: 14 }}>
+          <div style={{ padding: '12px 16px', background: '#4FD1C5', borderBottom: '3px solid #111', borderRadius: '11px 11px 0 0', fontWeight: 800, fontSize: 22, textTransform: 'uppercase' }}>Cloud sync</div>
+          <div style={{ padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.5 }}>Keeps this list in step with your own Slab Tasks cloud connector, so tasks Claude adds on claude.ai or your phone pop up here. Setup: cloud/README.md.</div>
+            <label style={label}>CLOUD ADDRESS
+              <input className="f-shadow" value={f.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://slab-tasks.<you>.workers.dev" autoFocus style={input} />
+            </label>
+            <label style={label}>SYNC KEY
+              <input className="f-shadow" type="password" value={f.key} onChange={(e) => set({ key: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') this.saveSync(); }} placeholder={f.hasKey ? 'Saved (leave empty to keep it)' : 'The SYNC_TOKEN you set on the cloud'} autoComplete="off" style={input} />
+            </label>
+            {f.error && <div role="alert" style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: '#B42318' }}>{f.error}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              {on ? btn('Turn off', this.turnSyncOff) : <span />}
+              <span style={{ display: 'flex', gap: 10 }}>{btn('Cancel', () => this.setState({ syncForm: null }))}{btn(f.busy ? 'Syncing…' : 'Save & sync', this.saveSync, true, f.busy)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   renderMenu({ mobile, c }) {
     const m = this.state.menu;
     const sw = (label, on, subOn, subOff, onClick) => (
@@ -441,6 +505,7 @@ export default class Tasks extends React.Component {
         {item('New task…', 'With notes, date and colour (Shift+Enter)', this.openNew)}
         {item('Clear done', c.done ? 'Remove ' + c.done + ' finished ' + (c.done === 1 ? 'task' : 'tasks') : 'Nothing to clear', this.clearDone, !c.done)}
         {desktop && item('Copy Claude config', 'MCP server entry for Claude Desktop', this.copyConfig)}
+        {desktop && window.slab.getSync && item('Cloud sync', this.syncLabel(), this.openSync)}
         {desktop && item('Show data file', 'tasks.json, shared with Claude', () => { window.slab.showDataFile(); this.setState({ menu: null }); })}
         {desktop && window.slab.platform === 'win32' && sw('Start with Windows', !!this.state.autoStart, 'On · runs in the tray after sign-in', 'Off · open Slab Tasks yourself', this.toggleAutoStart)}
         {desktop && item('Quit Slab Tasks', 'Closing the window keeps it in the tray; this stops it', () => window.slab.quit())}

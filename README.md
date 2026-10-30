@@ -206,7 +206,7 @@ Not yet linked to Slab. The task file format leaves room for Slab to show due ta
 
 ## Cloud connector (optional, self-hosted)
 
-Want Slab Tasks in Claude on the **web and mobile** too? [`cloud/`](cloud/README.md) runs the same tools as a remote connector on your own Cloudflare account, with GitHub sign-in limited to you. It's optional: the desktop app and extension don't need it.
+Want Slab Tasks in Claude on the **web and mobile** too? [`cloud/`](cloud/README.md) runs the same tools as a remote connector on your own Cloudflare account, with GitHub sign-in limited to you. It's optional: the desktop app and extension don't need it. With **Cloud sync** (••• menu) the desktop app keeps its list in step with the cloud, so tasks from your phone pop up on your PC.
 
 ## License
 

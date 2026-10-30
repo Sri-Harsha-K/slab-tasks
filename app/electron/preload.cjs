@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('slab', {
   setAutoStart: (on) => ipcRenderer.invoke('autostart:set', on),
   copyMcpConfig: () => ipcRenderer.invoke('mcp:copyConfig'),
   showDataFile: () => ipcRenderer.send('data:show'),
+  getSync: () => ipcRenderer.invoke('sync:get'),
+  setSync: (cfg) => ipcRenderer.invoke('sync:set', cfg),
+  syncOff: () => ipcRenderer.invoke('sync:off'),
+  syncNow: () => ipcRenderer.invoke('sync:now'),
+  onSyncState: (cb) => on('sync:state', cb),
   quit: () => ipcRenderer.send('app:quit'),
   // pop-up window
   onToasts: (cb) => on('toasts', cb),

@@ -7,7 +7,7 @@ export const VERSION = 1;
 export const COLORS = ['#FFD23F', '#FF8A3D', '#FF5C5C', '#FF6B9D', '#B69CFF', '#5AB0FF', '#4FD1C5', '#7CE38B'];
 export const DEFAULT_COLOR = '#FFD23F';
 export const CLAUDE_COLOR = '#4FD1C5';
-const MAX = { title: 200, notes: 4000, meetingId: 200, meetingTitle: 200, processed: 500 };
+const MAX = { title: 200, notes: 4000, meetingId: 200, meetingTitle: 200, processed: 500, deleted: 1000 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -22,7 +22,7 @@ const validColor = (v, fallback) => (/^#[0-9a-f]{6}$/i.test(v || '') ? v.toUpper
 
 let seq = 0;
 export const newId = () => 't' + Date.now().toString(36) + (seq++).toString(36) + Math.random().toString(36).slice(2, 6);
-export const emptyDoc = () => ({ app: APP, version: VERSION, rev: 0, tasks: [], processedMeetings: [] });
+export const emptyDoc = () => ({ app: APP, version: VERSION, rev: 0, tasks: [], processedMeetings: [], deleted: [] });
 
 /** Lowercased, punctuation-free title: "Send Q3 deck!" and "send q3 deck" are the same task. */
 export const normTitle = (t) => String(t || '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -67,7 +67,11 @@ export function normalizeDoc(raw) {
       ? { id: str(m.id, MAX.meetingId), title: str(m.title, MAX.meetingTitle), at: str(m.at, 40), count: Math.max(0, Math.floor(+m.count || 0)) }
       : null)
     .filter(Boolean).slice(-MAX.processed);
-  return { app: APP, version: VERSION, rev: Math.max(0, Math.floor(+raw.rev || 0)), tasks, processedMeetings };
+  // Deleted task ids (with when), so a sync never brings a deleted task back from the other side.
+  const deleted = (Array.isArray(raw.deleted) ? raw.deleted : [])
+    .map(d => d && typeof d === 'object' && str(d.id, 64) ? { id: str(d.id, 64), at: str(d.at, 40) } : null)
+    .filter(Boolean).slice(-MAX.deleted);
+  return { app: APP, version: VERSION, rev: Math.max(0, Math.floor(+raw.rev || 0)), tasks, processedMeetings, deleted };
 }
 
 /**
@@ -116,14 +120,21 @@ export function updateTask(doc, id, patch, now = new Date().toISOString()) {
 }
 
 /** Removes a task. Returns the removed task or null. Mutates `doc`. */
-export function deleteTask(doc, id) {
+const remember = (doc, ids, now) => {
+  doc.deleted = [...(doc.deleted || []).filter(d => !ids.includes(d.id)), ...ids.map(id => ({ id, at: now }))].slice(-MAX.deleted);
+};
+
+export function deleteTask(doc, id, now = new Date().toISOString()) {
   const i = doc.tasks.findIndex(t => t.id === id);
-  return i < 0 ? null : doc.tasks.splice(i, 1)[0];
+  if (i < 0) return null;
+  remember(doc, [id], now);
+  return doc.tasks.splice(i, 1)[0];
 }
 
 /** Removes every finished task. Returns how many. Mutates `doc`. */
-export function clearDone(doc) {
+export function clearDone(doc, now = new Date().toISOString()) {
   const before = doc.tasks.length;
+  remember(doc, doc.tasks.filter(t => t.done).map(t => t.id), now);
   doc.tasks = doc.tasks.filter(t => !t.done);
   return before - doc.tasks.length;
 }
@@ -215,4 +226,45 @@ export function dueReminders(tasks, now = Date.now(), fired = new Set(), graceMs
     if (!(at <= now) || now - at > graceMs) return false;
     return !(Date.parse(t.updatedAt || t.createdAt) > at);
   }).sort((a, b) => dueAt(a) - dueAt(b));
+}
+
+// ---- Sync: merge two copies of the list (desktop file and cloud) ------------------------------------
+
+/**
+ * Merges two lists task by task: the copy edited last wins, and a deletion wins over any edit made before
+ * it. Meetings marked processed on either side stay processed. Returns a new document; `rev` is the higher
+ * of the two, plus one when the result differs from `a`.
+ */
+export function mergeDocs(a, b) {
+  a = normalizeDoc(a); b = normalizeDoc(b);
+  const gone = new Map();
+  for (const d of [...a.deleted, ...b.deleted]) if (!gone.has(d.id) || d.at > gone.get(d.id)) gone.set(d.id, d.at);
+  const byId = new Map();
+  for (const t of [...a.tasks, ...b.tasks]) {
+    const cur = byId.get(t.id);
+    if (!cur || t.updatedAt > cur.updatedAt) byId.set(t.id, t);
+  }
+  const tasks = [...byId.values()].filter(t => !(gone.has(t.id) && gone.get(t.id) >= t.updatedAt));
+  // A task edited after it was deleted elsewhere comes back; its old deletion no longer applies.
+  const deleted = [...gone].filter(([id]) => !tasks.some(t => t.id === id)).map(([id, at]) => ({ id, at }))
+    .sort((x, y) => x.at.localeCompare(y.at)).slice(-MAX.deleted);
+  const pm = new Map();
+  for (const m of [...a.processedMeetings, ...b.processedMeetings]) {
+    const cur = pm.get(m.id);
+    pm.set(m.id, cur ? { ...cur, count: Math.max(cur.count, m.count), at: cur.at < m.at ? cur.at : m.at } : m);
+  }
+  const order = (x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id);
+  const merged = { app: APP, version: VERSION, rev: Math.max(a.rev, b.rev), tasks: tasks.sort(order), processedMeetings: [...pm.values()].slice(-MAX.processed), deleted };
+  if (!sameDoc(a, merged)) merged.rev += 1;
+  return merged;
+}
+
+/** Do two lists hold the same tasks, processed meetings and deletions (ignoring rev and order)? */
+export function sameDoc(a, b) {
+  const key = (d) => JSON.stringify([
+    [...d.tasks].sort((x, y) => x.id.localeCompare(y.id)),
+    d.processedMeetings.map(m => m.id + ':' + m.count).sort(),
+    (d.deleted || []).map(x => x.id + '@' + x.at).sort(),
+  ]);
+  return key(normalizeDoc(a)) === key(normalizeDoc(b));
 }
