@@ -1,0 +1,39 @@
+Turn my new meeting notes (since the previous run) into to-dos in Slab Tasks. Notes come from two note takers: Wispr Flow and Granola. This runs unattended every hour on weekdays, so do not ask me anything: decide, and report in the final summary.
+
+Who I am: Venkata Subrahmanya Sri Harsha Kalaga, called "Harsha" in meetings. IMPORTANT: "Venkat" in my meetings is a DIFFERENT person (my manager), not me. Speaker labels are often generic ("Speaker 2", "Microphone"/"System audio"); work out which speaker is me from context (e.g. someone says "Harsha, any updates?" and the next speaker answers).
+
+Tools:
+- Wispr Flow connector: search_meetings, get_meeting.
+- Granola connector: search_meetings, get_meetings, get_meeting_transcript.
+- slab-tasks MCP server (my to-do app): start_run, check_meetings, add_tasks, mark_meetings_processed, finish_run. Use only these five slab-tasks tools; never update or delete existing tasks; never pass allow_old.
+
+Meeting ids: use Wispr Flow ids as they are. Prefix Granola ids with "granola:" (e.g. "granola:8f2c…") everywhere you pass them to slab-tasks, so the two sources never collide.
+
+Steps:
+1. Call start_run. It returns search_since (the previous run, with a little overlap) and ran_at. Keep ran_at for step 10.
+
+2. Wispr Flow: call search_meetings with no query and since = search_since exactly as given; page through all results (has_more). Meetings with finalized = false are still being written: skip them and note their start times for step 10.
+
+3. Granola: call search_meetings with from_date = search_since exactly as given and attended_only = true; page through all results (next_cursor). Skip meetings that haven't ended yet, and note their start times for step 10.
+
+4. Same meeting in both? If a Granola meeting and a Wispr Flow meeting overlap in time (or start within 10 minutes of each other with a similar title), they are one meeting. Use the Wispr Flow copy for tasks (fall back to Granola if the Wispr copy has no transcript), and later mark the other copy processed so it is never used again.
+
+5. Call check_meetings with meetings = [{ id, start }] for all remaining meetings from both sources (start exactly as the source gives it; Granola ids prefixed). Work only on the ids in "new"; skip "processed" and "old".
+
+6. Read each new meeting:
+   - Wispr Flow: get_meeting with view_transcript = {} (read the transcript, not just the summary; page through it if truncated).
+   - Granola: get_meetings for the notes, summary and attendees, then get_meeting_transcript (page with next_offset if truncated). If the transcript is "transcript_pending", treat the meeting like an unfinished one: skip it, note its start time for step 10, and do not mark it processed. If the transcript is gone for good (no_transcript, transcript_deleted), work from the notes and summary.
+
+7. Pick out ONLY action items that are mine: assigned to me, or that I volunteered for ("I'll…", "today I'll…", someone asks Harsha to do something and I agree). Skip items owned by other people (Venkat, Lavina, Sairam, Rithvik, etc.), group decisions, FYIs, and things already done in the meeting. If a meeting is someone else's shared note (Wispr shared = true, or a Granola note I don't own), only count items where I am named as the owner. If unsure whether an item is mine, leave it out and list it in the summary.
+
+8. For each item: title = short imperative ("Send Q3 numbers to Priya"); notes = context (who asked, why, key numbers, related follow-ups like a review meeting; say which note taker it came from); due = YYYY-MM-DD only if a deadline was stated or clearly implied ("today" = the meeting's local date, "tomorrow" = the next day, "today or tomorrow" = tomorrow); time = HH:MM (24h) only if a time was stated.
+
+9. Call add_tasks once per meeting with its tasks and meeting = { id, title, date (local YYYY-MM-DD), start }. If a meeting has nothing for me (including tiny or empty recordings), call mark_meetings_processed for it instead. Also call mark_meetings_processed for the duplicate copies found in step 4. If add_tasks says the meeting is before the cutoff, accept that and move on.
+
+10. Once every new meeting is handled, call finish_run with ran_at from step 1 and pending_starts = all the start times noted in steps 2, 3 and 6.
+    - If a tool call failed (an error or timeout from Wispr Flow, Granola or slab-tasks), do NOT call finish_run, so the next run retries the same window.
+    - If a note taker isn't connected at all (its tools are missing or it asks for sign-in), skip that source, still call finish_run, and say so in the summary.
+
+11. Final reply, short: the window searched (local Pacific time); per meeting (with its note taker), the tasks added; items skipped as someone else's (one line each, with owner); meetings left pending; anything uncertain. If there were no new meetings, one line: "No new meetings since <previous run, local time>." Nothing else: no emails, messages or other actions.
+
+Times: Wispr Flow returns UTC; Granola dates without an offset are in my time zone. I'm in Pacific time.
