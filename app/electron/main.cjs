@@ -117,11 +117,13 @@ function refreshTray() {
   ]));
 }
 
-// ---- Pop-up: Slab's own toast in a transparent, always-on-top corner window ------------------------
+// ---- Pop-up: Slab's own toast in a small always-on-top corner window --------------------------------
+// Solid, not transparent: on some Windows GPUs a transparent window is shown and drawn but never reaches
+// the screen, so the chime played with nothing to see.
 
 function createNotifier() {
   notifier = new BrowserWindow({
-    width: NOTIFIER_W, height: 120, show: false, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    width: NOTIFIER_W, height: 120, show: false, frame: false, backgroundColor: '#FFF4E0', hasShadow: true,
     resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
     skipTaskbar: true, focusable: false, alwaysOnTop: true, title: 'Slab Tasks',
     webPreferences: {

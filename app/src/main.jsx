@@ -10,6 +10,6 @@ import Notifier from './Notifier.jsx';
 // The same bundle drives the pop-up window, which Electron loads as index.html#notifier.
 const notifier = location.hash === '#notifier' && !!window.slab;
 if (notifier) {
-  for (const el of [document.documentElement, document.body]) { el.style.background = 'transparent'; el.style.overflow = 'hidden'; }
+  for (const el of [document.documentElement, document.body]) el.style.overflow = 'hidden';
 }
 createRoot(document.getElementById('root')).render(notifier ? <Notifier /> : <Tasks />);

@@ -7,7 +7,7 @@ const SHOW_MS = 5000;  // each pop-up fades out after this, unless the pointer i
 const FADE_MS = 400;
 
 /**
- * The desktop reminder pop-up: a transparent, always-on-top Electron window in the corner of the screen
+ * The desktop reminder pop-up: a small, solid, always-on-top Electron window in the corner of the screen
  * that renders the same Toast as the app. The main process owns the list; this window just draws it,
  * fades each toast out after a few seconds, and reports its height so the window can hug the stack.
  */
